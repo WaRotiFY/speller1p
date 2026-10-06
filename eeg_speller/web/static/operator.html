@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EEG Speller — экспериментатор</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/operator.css">
+  <script src="/operator.js" defer></script>
+</head>
+<body class="operator">
+  <div class="shell wide">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">✳</span><span>biospeller <strong>lab</strong></span><span class="role-tag">экспериментатор</span></div>
+      <div class="top-status">
+        <span class="presence" id="presence"><span class="dot off"></span><span id="presence-text">Окно участника не открыто</span></span>
+        <span class="state-pill" id="session-pill">Нет сессии</span>
+        <button class="ghost" id="open-participant" type="button">Открыть окно участника ↗</button>
+      </div>
+    </header>
+
+    <div class="op-layout">
+      <aside class="op-settings">
+        <section class="card op-card">
+          <div class="op-head"><h2>Сессия</h2><span class="op-sub">участник, задание, профиль</span></div>
+          <div class="field-row">
+            <label for="participant">ID участника</label>
+            <input id="participant" type="text" value="P001" maxlength="32" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="field-row">
+            <label for="experiment">ID эксперимента <span class="optional">необязательно</span></label>
+            <input id="experiment" type="text" maxlength="32" autocomplete="off" spellcheck="false" placeholder="например, EXP-04_alpha">
+          </div>
+          <div class="field-row">
+            <label for="task">Задание</label>
+            <select id="task"></select>
+          </div>
+          <div class="field-row" id="custom-row" hidden>
+            <label for="custom">Своя фраза</label>
+            <input id="custom" type="text" maxlength="120" autocomplete="off" spellcheck="false" value="привет">
+          </div>
+          <div class="field-row">
+            <label for="profile">Базовый профиль (YAML)</label>
+            <select id="profile"></select>
+          </div>
+          <p class="hint" id="profile-hint">Поля ниже заполняются из профиля. Изменённые помечены точкой.</p>
+          <div class="op-buttons">
+            <button class="primary" id="start" type="button">Начать сессию</button>
+            <button class="secondary" id="pause" type="button" disabled>Пауза</button>
+            <button class="secondary danger" id="stop" type="button" disabled>Стоп</button>
+          </div>
+          <p class="op-error" id="error" hidden></p>
+        </section>
+
+        <form class="card op-card" id="blocks" autocomplete="off">
+          <div class="op-head"><h2>Экспериментальные блоки</h2><span class="op-sub" id="blocks-sub">меняются между сессиями</span></div>
+          <div id="groups"></div>
+          <div class="preset">
+            <label for="preset-name">Сохранить как профиль</label>
+            <div class="preset-row"><span class="prefix">gui_</span><input id="preset-name" type="text" maxlength="32" placeholder="no_llm_fast" spellcheck="false"><span class="prefix">.yaml</span><button class="secondary" id="save-preset" type="button">Сохранить</button></div>
+            <p class="hint" id="preset-hint">Файл появится в configs/ и в списке профилей.</p>
+          </div>
+        </form>
+      </aside>
+
+      <main class="op-monitor">
+        <section class="stats" id="stats" aria-label="Сводка сессии"></section>
+
+        <div class="op-row two">
+          <section class="card op-card">
+            <div class="op-head"><h2>Текущая эпоха</h2><span class="op-sub" id="epoch-sub">—</span></div>
+            <div class="epoch-grid">
+              <div>
+                <div class="mini-matrix" id="mirror" aria-label="Зеркало стимуляции"></div>
+                <div class="mirror-legend"><span><i class="lg flash"></i>вспышка</span><span><i class="lg hit"></i>нажатия</span><span><i class="lg target"></i>цель</span></div>
+              </div>
+              <div class="epoch-info">
+                <div class="kv"><span>Цель</span><strong id="cur-target">—</strong></div>
+                <div class="kv"><span>Вспышка</span><strong id="cur-flash">—</strong></div>
+                <div class="kv"><span>Нажатий</span><strong id="cur-hits">—</strong></div>
+                <div class="progress-line"><div id="cur-progress"></div></div>
+                <div class="leader">
+                  <div class="leader-top"><span>Лидер апостериорного</span><strong id="leader-symbol">—</strong></div>
+                  <div class="meter" aria-hidden="true"><div class="meter-fill" id="leader-fill"></div><div class="meter-tau" id="leader-tau"></div></div>
+                  <p id="leader-text">Ожидание данных</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="card op-card">
+            <div class="op-head"><h2>Предсказания</h2><span class="op-sub" id="pred-sub">быстрая БЯМ</span></div>
+            <div class="label-sm">Слова-кандидаты · доля среди кандидатов</div>
+            <ol class="words" id="words"><li class="muted">Появятся после старта</li></ol>
+            <div class="label-sm">Последнее решение детектора</div>
+            <div class="decision-line" id="decision">—</div>
+            <div class="qwen-line">
+              <button class="text-button" id="qwen" type="button" disabled>Предложить продолжение (Qwen) ↗</button>
+              <p id="qwen-text" class="muted">Qwen не подключён.</p>
+            </div>
+          </section>
+        </div>
+
+        <section class="card op-card">
+          <div class="op-head">
+            <h2>Распределения по символам</h2>
+            <span class="op-sub" id="dist-sub">—</span>
+            <div class="seg" role="group" aria-label="Какую эпоху показывать">
+              <button type="button" class="on" data-view="live">Текущая эпоха</button>
+              <button type="button" data-view="last">Последняя завершённая</button>
+            </div>
+          </div>
+          <div class="heatmaps">
+            <figure class="heat"><figcaption><strong>Prior</strong><span id="prior-cap">быстрая БЯМ</span></figcaption><div class="heat-grid" id="heat-prior"></div><ol class="top5" id="top-prior"></ol></figure>
+            <figure class="heat"><figcaption><strong>Правдоподобие</strong><span id="lik-cap">нажатия пробела</span></figcaption><div class="heat-grid" id="heat-lik"></div><ol class="top5" id="top-lik"></ol></figure>
+            <figure class="heat"><figcaption><strong>Апостериорное</strong><span id="post-cap">после слияния</span></figcaption><div class="heat-grid" id="heat-post"></div><ol class="top5" id="top-post"></ol></figure>
+          </div>
+          <p class="hint">Цвет ячейки ∝ √p, подпись — вероятность. Пунктирная рамка — цель, тёмная рамка — лидер.</p>
+        </section>
+
+        <div class="op-row two">
+          <section class="card op-card">
+            <div class="op-head"><h2>Текст</h2><span class="op-sub" id="text-sub">—</span></div>
+            <div class="label-sm">Цель</div>
+            <div class="text-box target" id="t-target">—</div>
+            <div class="label-sm">Первичный текст · красным — несовпадение с целью</div>
+            <div class="text-box" id="t-primary">—</div>
+            <div class="label-sm">Исправленный текст (медленная БЯМ)</div>
+            <div class="text-box secondary" id="t-secondary">—</div>
+          </section>
+          <section class="card op-card">
+            <div class="op-head"><h2>Коррекции</h2><span class="op-sub">последние вызовы медленной БЯМ</span></div>
+            <ul class="corrections" id="corrections"><li class="muted">Коррекций пока не было</li></ul>
+          </section>
+        </div>
+
+        <section class="card op-card">
+          <div class="op-head"><h2>Журнал эпох</h2><span class="op-sub" id="log-sub">последние 60</span></div>
+          <div class="table-wrap">
+            <table class="log">
+              <thead><tr><th>Эпоха</th><th>Поз.</th><th>Цель</th><th>Выбор</th><th></th><th>Уверенность</th><th>Отрыв</th><th>p prior (цель)</th><th>p post (цель)</th><th>Ранг цели</th><th>Нажатий</th><th>Prior, мс</th></tr></thead>
+              <tbody id="log"></tbody>
+            </table>
+          </div>
+        </section>
+        <p class="session-note" id="dir-note">Нажатия пробела принимает только окно участника. Запись сессии остаётся на этом компьютере.</p>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

@@ -109,6 +109,8 @@ runs/
 | `session_started` | Session Recorder | `run_mode`, `llm_mode`, `paradigm`, `seed`, `config_hash` |
 | `task_assigned` | Session Recorder | `task_id`, `target_text` |
 | `session_ended` | Session Recorder | `status`, `reason`, `n_epochs`, `n_events` |
+| `session_paused` | Session Recorder | `next_epoch_id` — пауза, поставленная экспериментатором в браузерном режиме; эпоха после паузы начинается заново |
+| `session_resumed` | Session Recorder | `next_epoch_id` — конец паузы; время паузы не входит в оперативную скорость окна экспериментатора |
 | `warning`, `error` | любой | `module`, `message`, `details` |
 
 ### 6.2 Эпоха и физиология (заглушка)

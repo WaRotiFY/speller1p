@@ -6,15 +6,15 @@
 |---|---|---|---|
 | NEED-F-01 | `epoch/loop.py`, `text/primary.py` | `test_run_and_replay` | Реализовано в симуляции |
 | NEED-F-02 | `physiology/simulated.py` | `test_two_paradigms` | Заглушка обеих парадигм |
-| NEED-F-03 | `core/config.py`, `physiology/simulated.py` | `test_timing_validation` | Реализована конфигурация симуляции |
+| NEED-F-03 | `core/config.py`, `physiology/simulated.py`, `web/settings.py` | `test_timing_validation`, `test_settings_whitelist_and_validation` | Конфигурация симуляции; в браузере — выбор парадигмы и таймингов в окне экспериментатора |
 | NEED-F-04 | `physiology/base.py`, `epoch/fusion.py` | `test_fusion` | Контракт реализован, обработка ЭЭГ вне объёма |
 | NEED-F-05 | `decoding/detector.py`, `text/primary.py` | `test_run_and_replay` | Реализовано в симуляции |
 | NEED-F-06 | `llm/fast.py`, `epoch/fusion.py` | `test_no_llm` | Реализовано с mock-моделью |
 | NEED-F-07 | `llm/slow.py`, `text/secondary.py` | `test_correction_validation` | Реализовано с mock-моделью |
 | NEED-F-08 | `ext/word_prediction.py` | `bench-llm` | Реализовано с mock-моделью |
-| NEED-F-09 | `ext/ui_console.py`, `ext/commands.py` | `test_run_and_replay` | Консоль, команды — заглушка |
+| NEED-F-09 | `ext/ui_console.py`, `ext/commands.py`, `web/static/operator.*` | `test_run_and_replay`, `test_http_operator_flow` | Консоль; окно экспериментатора с распределениями и предсказаниями; команды — заглушка |
 | NEED-F-10 | `ext/tts.py` | `test_tts_stub` | Заглушка, аудио не создаётся |
-| NEED-F-11 | `core/config.py` | `test_timing_validation` | Реализовано |
+| NEED-F-11 | `core/config.py`, `web/settings.py` | `test_timing_validation`, `test_settings_whitelist_and_validation` | Реализовано; в браузере — настройки блоков на сессию и сохранение профиля `gui_*.yaml` |
 | NEED-F-12 | `recording/recorder.py` | `test_run_and_replay` | Реализовано |
 | NEED-F-13 | `recording/storage.py` | `test_run_and_replay` | События и метаданные реализованы; сырой ЭЭГ нет |
 | NEED-F-14 | `recording/export.py` | `test_export_integrity` | Реализовано |

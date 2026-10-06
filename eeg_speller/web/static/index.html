@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>EEG Speller — локальная лаборатория</title>
+  <title>EEG Speller — участник</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
-<body>
+<body class="participant">
   <div class="shell">
     <header class="topbar">
       <div class="brand"><span class="brand-mark">✳</span><span>biospeller <strong>lab</strong></span></div>
@@ -16,43 +16,27 @@
 
     <main>
       <section class="intro">
-        <div class="eyebrow">ИНТЕРАКТИВНЫЙ ПРОТОТИП / V3</div>
+        <div class="eyebrow">ОКНО УЧАСТНИКА</div>
         <h1>Набор текста вниманием</h1>
-        <p>Следите за нужным символом. Когда подсвечена его строка или столбец, нажмите <kbd>Пробел</kbd>. Это имитация ответа ЭЭГ для демонстрации без оборудования.</p>
+        <p>Следите за нужным символом. Когда подсвечена его строка или столбец, нажмите <kbd>Пробел</kbd>. Это имитация ответа ЭЭГ для демонстрации без оборудования. Сессию запускает экспериментатор.</p>
       </section>
 
-      <div class="workspace">
-        <aside class="setup card">
-          <div class="section-head"><span class="step">01</span><div><h2>Настройка</h2><p>Параметры читаются из YAML</p></div></div>
-          <label for="config">Конфигурация</label>
-          <select id="config" aria-label="Конфигурация"></select>
-          <div class="config-detail" id="config-detail">Загрузка конфигураций…</div>
-          <label for="target">Фраза для тренировки <span class="optional">необязательно</span></label>
-          <input id="target" type="text" value="привет" maxlength="120" autocomplete="off" spellcheck="false" aria-describedby="target-help">
-          <p class="hint" id="target-help">Можно оставить поле пустым и свободно набирать текст. Фраза служит подсказкой; декодер её не видит.</p>
-          <div class="button-row"><button id="start" class="primary">Начать сессию <span>→</span></button><button id="stop" class="secondary" disabled>Остановить</button></div>
-          <div class="separator"></div>
-          <div class="model-card"><div class="model-icon">◈</div><div><strong>Языковая модель</strong><p id="model-status">Проверка локальной модели…</p></div></div>
-          <div class="howto"><strong>Как это работает</strong><ol><li>Выберите YAML и начните сессию.</li><li>Смотрите на целевой символ в матрице.</li><li>Жмите пробел во время его вспышек.</li><li>После повторений появится решение.</li></ol></div>
-        </aside>
-
+      <div class="workspace participant-view">
         <section class="stage card" aria-label="Матрица символов">
-          <div class="stage-top"><div><span class="step">02</span><h2>Поле символов</h2></div><div class="state-pill" id="state-pill">Ожидание</div></div>
-          <div class="target-strip"><span>СЛЕДУЮЩИЙ СИМВОЛ</span><strong id="target-char">—</strong><span id="target-progress">Введите фразу и начните</span></div>
+          <div class="stage-top"><div><h2>Поле символов</h2></div><div class="state-pill" id="state-pill">Подключение…</div></div>
+          <div class="target-strip"><span>СЛЕДУЮЩИЙ СИМВОЛ</span><strong id="target-char">—</strong><span id="target-progress">Ожидание экспериментатора</span></div>
           <div class="matrix-wrap"><div class="matrix" id="matrix" role="grid" aria-label="Матрица из 36 символов"></div></div>
-          <div class="flash-status"><div><span class="flash-icon" id="flash-icon">✧</span><strong id="flash-label">Матрица готова</strong><p id="flash-help">Нажимайте пробел только во время подсветки нужной группы.</p></div><div class="hit-count"><b id="hit-count">0</b><small>сигналов</small></div></div>
+          <div class="flash-status"><div><span class="flash-icon" id="flash-icon">✧</span><strong id="flash-label">Ожидание</strong><p id="flash-help">Экспериментатор настраивает и запускает сессию в своём окне.</p></div><div class="hit-count"><b id="hit-count">0</b><small>сигналов</small></div></div>
           <div class="progress-line"><div id="progress-fill"></div></div>
           <div class="progress-meta"><span id="epoch-label">Эпоха —</span><span id="flash-count">0 / 0 вспышек</span></div>
         </section>
 
         <aside class="results card">
-          <div class="section-head"><span class="step">03</span><div><h2>Результат</h2><p>Обновляется после каждой эпохи</p></div></div>
+          <div class="section-head"><div><h2>Ваш текст</h2><p>Обновляется после каждой эпохи</p></div></div>
           <div class="result-label">ОСНОВНОЙ ТЕКСТ</div><div class="typed-text" id="primary-text" aria-live="polite"><span class="placeholder">Текст появится здесь</span></div>
           <div class="result-label">ИСПРАВЛЕННЫЙ ТЕКСТ</div><div class="secondary-text" id="secondary-text">—</div>
           <div class="decision-box"><span>ПОСЛЕДНЕЕ РЕШЕНИЕ</span><div><strong id="decision-symbol">—</strong><p id="decision-detail">Ожидается первая эпоха</p></div></div>
-          <div class="result-label">ВОЗМОЖНЫЕ СИМВОЛЫ</div><div class="suggestions" id="suggestions"><span class="muted">Появятся после эпохи</span></div>
-          <div class="qwen-box"><div class="qwen-heading"><span>◈</span><strong>Локальный Qwen</strong></div><p id="qwen-text">Если модель установлена, она предложит короткое продолжение фразы.</p><button id="qwen-button" class="text-button" disabled>Предложить продолжение ↗</button></div>
-          <p class="session-note" id="session-note">Запись сессии остаётся на этом компьютере.</p>
+          <p class="session-note" id="session-note">Нажатия записываются только на этом компьютере.</p>
         </aside>
       </div>
     </main>
