@@ -334,7 +334,8 @@ function renderEpoch(s) {
   ui.leaderTau.style.left = `${100 * s.tau}%`;
   ui.leaderTau.title = `τ = ${s.tau}`;
   const fate = lead.below_tau ?
-    (s.detector_mode === 'abstain' ? 'ниже τ: эпоха повторится' : 'ниже τ: выберется с меткой «неуверенно»') :
+    (s.detector_mode === 'abstain' ? 'ниже τ: если так и останется, эпоха повторится' :
+      'ниже τ: если так и останется, символ выберется с меткой «неуверенно»') :
     `выше τ = ${fmt2.format(s.tau)}`;
   ui.leaderText.textContent = cur.evidence_flashes ?
     `${pct(lead.confidence)} · отрыв ${pct(lead.margin)} · ${fate}` :
