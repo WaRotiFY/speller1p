@@ -9,6 +9,14 @@ from eeg_speller.core.distributions import SymbolDistribution, log_probs
 from eeg_speller.text.normalize import normalize
 
 
+def _context(text: str) -> str:
+    """normalize() strips edge spaces, but a trailing space is a word boundary here."""
+    clean = normalize(text)
+    if clean and text[-1:].isspace() and not clean.endswith(" "):
+        clean += " "
+    return clean
+
+
 class MockNGram:
     """Source Model (Fast LLM) mock; NEED-F-06/08; MA-08/10/11; Q-13."""
     version = "1"
@@ -51,7 +59,7 @@ class MockNGram:
 
     def predict(self, context, repertoire):
         # ASSUMPTION[MA-08]
-        probs = self._dist(normalize(context), repertoire.symbols)
+        probs = self._dist(_context(context), repertoire.symbols)
         bs = float(self.cfg["char_marginal"]["backspace_prob"])
         probs *= 1 - bs
         probs[repertoire.index("⌫")] = bs
@@ -59,7 +67,7 @@ class MockNGram:
 
     def top_words(self, context: str, n: int):
         # ASSUMPTION[MA-11]
-        clean = normalize(context)
+        clean = _context(context)
         prefix = clean.split(" ")[-1] if clean and clean[-1] not in " .," else ""
         candidates = [w for w in self.vocab if w.startswith(prefix) and len(w) > len(prefix)]
         scored = []
