@@ -67,7 +67,7 @@
 
 ## 2. Установка
 
-Нужны **Git**, **uv** (менеджер Python) и интернет на время установки. Команды ниже — для Windows PowerShell; для macOS и Linux см. примечание в конце раздела.
+Нужны **Git**, **uv** (менеджер Python) и интернет на время установки. Команды ниже работают и в PowerShell, и в обычной командной строке Windows (cmd); для macOS и Linux см. примечание в конце раздела.
 
 **Шаг 1. Поставить Git и uv** (если ещё нет):
 
@@ -87,10 +87,10 @@ uv --version
 
 ```powershell
 git clone -b operator-window https://github.com/WaRotiFY/speller1p.git
-Set-Location speller1p
+cd speller1p
 uv python install 3.12
 uv venv --python 3.12
-uv pip install -e '.[test]'
+uv pip install -e ".[test]"
 ```
 
 `uv` сам скачает Python 3.12 и создаст изолированное окружение `.venv` в папке проекта. Активировать его не нужно: все команды ниже запускаются через `uv run --no-sync`.
@@ -308,8 +308,9 @@ uv run --no-sync python -m eeg_speller.web.server --port 8765 --output runs\gui 
 | Пробел не регистрируется | щёлкнуть в окне **участника** (не экспериментатора) и не оставлять курсор в текстовом поле |
 | Буква не выбирается, попытка повторяется | это режим `abstain`: сигнала не хватило. Нажимать на обе вспышки — и строки, и столбца |
 | «Начать сессию» не активна | сначала остановить текущую сессию кнопкой «Стоп»: одновременно идёт только одна |
-| `ModuleNotFoundError` | выполнить `uv pip install -e '.[test]'` в папке проекта |
-| Ошибка про `hf_causal` / `transformers` | выбран бэкенд настоящей модели; вернуть `mock_ngram` или выполнить `uv pip install -e '.[hf]'` |
+| `ModuleNotFoundError: No module named 'yaml'` (или другой модуль) | зависимости не установились: выполнить `uv venv --python 3.12`, затем `uv pip install -e ".[test]"` — именно с двойными кавычками, одинарные в cmd не работают |
+| `ModuleNotFoundError` (прочее) | выполнить `uv pip install -e ".[test]"` в папке проекта |
+| Ошибка про `hf_causal` / `transformers` | выбран бэкенд настоящей модели; вернуть `mock_ngram` или выполнить `uv pip install -e ".[hf]"` |
 
 ---
 
