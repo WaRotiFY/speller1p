@@ -64,6 +64,9 @@ def create_slow(cfg, allow_remote: bool, corpus):
     if backend == "openai_compat":
         from eeg_speller.llm.backends.openai_compat import OpenAICompatCorrection
         return OpenAICompatCorrection(cfg, allow_remote)
+    if backend == "local_openai":
+        from eeg_speller.llm.backends.local_openai import LocalOpenAICorrection
+        return LocalOpenAICorrection(cfg)
     if backend == "hf_causal":
         raise NotImplementedError("local slow HF correction generation is not implemented")
     raise ValueError(f"unknown slow backend: {backend}")

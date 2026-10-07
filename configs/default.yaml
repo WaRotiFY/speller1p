@@ -39,6 +39,9 @@ slow_llm:
   window_words: 3
   min_context_words: 1
   strict_word_count: true
+  base_url: http://127.0.0.1:11434/v1
+  prompt_file_local: prompts/correction_local.txt
+  timeout_s: 30
   mock: {max_edit: 2, same_row_col_cost: 0.5}
 rl: {enabled: true, mode: broadcast_only, min_labels: 100}
 metrics:

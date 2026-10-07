@@ -1,0 +1,7 @@
+# Медленный профиль с настоящей локальной БЯМ для коррекции.
+# Перед запуском: Ollama запущен и модель скачана (ollama pull qwen2.5:3b), см. README.
+inherits: gui_slow.yaml
+slow_llm:
+  backend: local_openai
+  model_id: qwen2.5:3b
+  base_url: http://127.0.0.1:11434/v1
