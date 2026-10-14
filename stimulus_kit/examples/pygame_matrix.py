@@ -1,4 +1,4 @@
-"""Example stimulus module: classic 6x6 matrix, rows and columns flash (pygame).
+"""Матрица 6×6: мигают строки и столбцы (pygame).
 
 Run the speller first, then:
 

@@ -2,7 +2,7 @@
 const $ = (id) => document.getElementById(id);
 const PHASES = { waiting_modules: "ждём модуль стимуляции", presenting: "идёт эпоха", result: "показ результата",
   finished: "сессия завершена" };
-let version = -1, current = null, dismissed = null;
+let version = -1, current = null, dismissed = null, programs = [];
 
 async function api(path, body) {
   const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" },
@@ -21,11 +21,31 @@ async function init() {
   for (const p of data.profiles) $("profile").add(new Option(p.replace(/\.yaml$/, ""), p));
   for (const t of data.tasks) $("task").add(new Option(`${t.id} — ${t.text}`, t.id));
   $("task").onchange = () => $("custom-row").classList.toggle("hidden", $("task").value !== "custom");
+  programs = data.programs || [];
+  const groups = { modules: "Мои программы (stimulus_kit/modules)", examples: "Примеры (stimulus_kit/examples)" };
+  for (const folder of Object.keys(groups)) {
+    const items = programs.filter((p) => p.folder === folder);
+    if (!items.length) continue;
+    const og = document.createElement("optgroup");
+    og.label = groups[folder];
+    for (const p of items) og.appendChild(new Option(`${p.label} — ${p.id.split("/")[1]}`, p.id));
+    $("program").appendChild(og);
+  }
+  const first = programs.find((p) => p.id.endsWith("pygame_matrix.py")) || programs[0];
+  if (first) $("program").value = first.id;
+  $("program").onchange = programChanged;
+  programChanged();
   $("start-btn").onclick = start;
   $("pause-btn").onclick = () => api("/api/pause", { paused: !(current && current.paused) }).catch(alert);
   $("stop-btn").onclick = () => confirm("Завершить сессию?") && api("/api/stop", {}).catch(alert);
   $("new-btn").onclick = () => { dismissed = current && current.session_id; render(null); };
   poll();
+}
+
+function programChanged() {
+  const p = programs.find((x) => x.id === $("program").value);
+  $("keyboard-row").classList.toggle("hidden", !(p && p.keyboard));
+  $("args-row").classList.toggle("hidden", !p);
 }
 
 async function start() {
@@ -34,14 +54,15 @@ async function start() {
     : { kind: "task", id: v };
   text($("start-error"), "");
   try {
-    await api("/api/start", { profile: $("profile").value, participant_id: $("participant").value.trim(), task });
+    await api("/api/start", { profile: $("profile").value, participant_id: $("participant").value.trim(), task,
+      stimulus: $("program").value, keyboard: $("keyboard").checked, stimulus_args: $("program-args").value });
   } catch (e) { text($("start-error"), e.message); }
 }
 
 async function poll() {
   for (;;) {
     try {
-      const data = await api(`/api/live?since=${version}&timeout=10`);
+      const data = await api(`/api/live?since=${version}&timeout=3`);
       version = data.version;
       current = data.session;
       render(current && current.session_id === dismissed ? null : current);
@@ -101,6 +122,19 @@ function render(s) {
   text($("pause-btn"), s.paused ? "Продолжить" : "Пауза");
   $("new-btn").classList.toggle("hidden", !s.finished);
   text($("end-note"), s.finished ? `Завершено: ${s.end_reason}${s.error ? " — " + s.error : ""}` : "");
+
+  const sp = s.stimulus_program;
+  $("program-box").classList.toggle("hidden", !sp);
+  if (sp) {
+    const failed = !sp.running && sp.returncode !== 0 && !s.finished;
+    $("program-box").classList.toggle("failed", failed);
+    const st = $("program-status");
+    st.className = sp.running ? "ok-dot" : (failed ? "bad-dot" : "");
+    st.textContent = `${sp.program}${sp.args.length ? " " + sp.args.join(" ") : ""} — ` +
+      (sp.running ? "работает" : `завершилась (код ${sp.returncode})`);
+    $("program-log").classList.toggle("hidden", !(failed && sp.log_tail.length));
+    text($("program-log"), sp.log_tail.join("\n"));
+  }
 
   const ul = $("modules"); ul.textContent = "";
   for (const m of mods) {

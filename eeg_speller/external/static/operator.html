@@ -29,8 +29,13 @@
           </select>
         </label>
         <label class="wide hidden" id="custom-row">Фраза <input id="custom" maxlength="200" autocomplete="off"></label>
+        <label class="wide">Программа стимуляции (экран испытуемого)
+          <select id="program"><option value="">— запущу сам —</option></select>
+        </label>
+        <label class="check hidden" id="keyboard-row"><input type="checkbox" id="keyboard" checked> Пробел вместо ЭЭГ</label>
+        <label class="hidden" id="args-row">Доп. аргументы программы <input id="program-args" maxlength="300" autocomplete="off" placeholder="например --fullscreen"></label>
       </div>
-      <p class="hint">Экран испытуемого показывает отдельная программа стимуляции. Запустите её до или после старта — спеллер подождёт.</p>
+      <p class="hint" id="program-hint">Программа откроется в отдельном окне по кнопке «Начать сессию» и закроется по «Завершить». Свои программы кладите в папку <code>stimulus_kit/modules/</code>.</p>
       <button id="start-btn" class="primary">Начать сессию</button>
       <p id="start-error" class="error"></p>
     </section>
@@ -68,6 +73,11 @@
         <button id="stop-btn" class="danger">Завершить</button>
         <button id="new-btn" class="hidden primary">Новая сессия</button>
         <span id="end-note" class="muted"></span>
+      </div>
+      <div id="program-box" class="card program hidden">
+        <div class="label">Программа стимуляции</div>
+        <div id="program-status"></div>
+        <pre id="program-log" class="hidden"></pre>
       </div>
 
       <details class="card more">

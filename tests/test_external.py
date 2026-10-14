@@ -208,3 +208,32 @@ def test_wait_epoch_does_not_skip_an_epoch_that_started_meanwhile():
     assert link.should_stop()
     link._handle({"cmd": "end"})
     assert link.ended and link.wait_epoch(timeout=0.1) is None
+
+
+# ---------------------------------------------------------------- program dropdown
+def test_programs_in_modules_folder_are_offered_and_launched(tmp_path):
+    from eeg_speller.external import launcher
+    folder = launcher.STIMULUS_DIRS["modules"]
+    folder.mkdir(exist_ok=True)
+    demo = folder / "pytest_demo_tmp.py"
+    demo.write_text('"""Тестовая демонстрация."""\nimport sys\nfrom speller_link import SpellerLink\n'
+                    'print("args", sys.argv[1:])\n', encoding="utf-8")
+    helper = folder / "not_a_module_tmp.py"
+    helper.write_text("print('no link here')\n", encoding="utf-8")
+    try:
+        found = {p["id"]: p for p in launcher.stimulus_programs()}
+        assert found["modules/pytest_demo_tmp.py"]["label"] == "Тестовая демонстрация"
+        assert "modules/not_a_module_tmp.py" not in found
+        assert found["examples/pygame_matrix.py"]["keyboard"]
+        assert launcher.build_args(found["examples/pygame_matrix.py"], True, "--fullscreen", "") == \
+            ["--keyboard", "--fullscreen"]
+        assert launcher.build_args(found["examples/headless_sim.py"], True, "", "мир") == ["--text", "мир"]
+        proc = launcher.StimulusProcess("modules/pytest_demo_tmp.py", ["--x"], tmp_path / "stimulus.log")
+        proc.proc.wait(timeout=30)
+        status = proc.status()
+        assert status["returncode"] == 0 and status["log_tail"] == ["args ['--x']"]
+        with pytest.raises(ValueError):
+            launcher.resolve("modules/../../evil.py")
+    finally:
+        demo.unlink()
+        helper.unlink()

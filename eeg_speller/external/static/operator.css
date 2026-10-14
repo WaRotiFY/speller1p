@@ -58,3 +58,12 @@ td.bad { color: var(--danger); font-weight: 700; }
 td.ok { color: var(--accent); font-weight: 700; }
 code { font-size: 12px; }
 @media (max-width: 640px) { .row, .grid { grid-template-columns: 1fr; } .typed { font-size: 26px; } }
+label.check { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.program pre { margin: 10px 0 0; max-height: 220px; overflow: auto; background: #f6f8f8; border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px; font-size: 12px; white-space: pre-wrap; }
+.program.failed { border-color: #f0c2bf; }
+.ok-dot::before, .bad-dot::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 8px; vertical-align: middle; }
+.ok-dot::before { background: var(--accent); }
+.bad-dot::before { background: var(--danger); }

@@ -1,4 +1,4 @@
-"""Example stimulus module: one symbol at a time in the centre (RSVP, pygame).
+"""По одной букве в центре экрана (RSVP, pygame).
 
 A completely different picture from ``pygame_matrix.py``; the speller does not
 notice the difference. Run the speller first, then:

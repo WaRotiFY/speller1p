@@ -1,4 +1,4 @@
-"""Example module without a screen: simulated flashes and a simulated brain.
+"""Без экрана: симуляция вспышек и «мозга» для проверки.
 
 Useful for testing the speller and the protocol on any computer (CI, servers).
 The simulated participant knows the phrase it wants to type (``--text``) —

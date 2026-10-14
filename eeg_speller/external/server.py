@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from eeg_speller.core.config import load_config
 from eeg_speller.external.controller import ExternalSession, default_model_factory
+from eeg_speller.external.launcher import StimulusProcess, build_args, stimulus_programs
 from eeg_speller.web import settings
 from eeg_speller.web.server import resolve_task
 
@@ -47,6 +48,7 @@ class Manager:
         self.lock = threading.Lock()
         self.transport_factory = transport_factory
         self.models: dict[str, object] = {}
+        self.stimulus: StimulusProcess | None = None
 
     def model(self, kind, cfg):
         key = kind + json.dumps(cfg, sort_keys=True, ensure_ascii=False)
@@ -65,10 +67,42 @@ class Manager:
             participant = settings.check_identifier(body.get("participant_id"), "participant_id")
             cfg = load_config(CONFIGS / name).model_copy(update={"participant_id": participant,
                                                                   "task_id": task_id})
+            program = body.get("stimulus") or ""
+            info = None
+            if program:
+                info = next((p for p in stimulus_programs() if p["id"] == program), None)
+                if info is None:
+                    raise ValueError("unknown stimulus program")
+            extra = body.get("stimulus_args") or ""
+            if not isinstance(extra, str) or len(extra) > 300:
+                raise ValueError("stimulus_args must be a short string")
             transport = self.transport_factory() if self.transport_factory else None
-            self.session = ExternalSession(cfg, target, self.output, transport=transport,
-                                           model_factory=self.model, profile=name).start()
-            return self.session.monitor()
+            session = ExternalSession(cfg, target, self.output, transport=transport,
+                                      model_factory=self.model, profile=name)
+            self.stimulus = None
+            if info is not None:
+                args = build_args(info, bool(body.get("keyboard")), extra, target)
+                # The control stream exists already, so the program finds the speller at once.
+                self.stimulus = StimulusProcess(program, args, session.storage.directory / "external" / "stimulus.log")
+                session.rec.emit("Session Recorder", "command_issued",
+                                 {"command": "start_stimulus_program", "text": program, "result": args})
+            self.session = session.start()
+            threading.Thread(target=self._stop_stimulus_when_done, args=(session, self.stimulus),
+                             daemon=True).start()
+            return self.monitor()
+
+    def _stop_stimulus_when_done(self, session, stimulus):
+        session.wait_finished()
+        if stimulus is not None:
+            stimulus.stop()
+
+    def monitor(self) -> dict | None:
+        s = self.session
+        if s is None:
+            return None
+        state = s.monitor()
+        state["stimulus_program"] = self.stimulus.status() if self.stimulus else None
+        return state
 
     def live(self, since: int, timeout: float) -> dict:
         start, s = time.monotonic(), self.session
@@ -82,7 +116,7 @@ class Manager:
         s = self.session
         # Versions of different sessions must never collide on the client side.
         return {"version": (id(s) % 10**6) * 10**6 + s.version if s else 0,
-                "session": s.monitor() if s else None}
+                "session": self.monitor()}
 
 
 def make_handler(manager: Manager):
@@ -112,7 +146,8 @@ def make_handler(manager: Manager):
             url = urlsplit(self.path)
             q = parse_qs(url.query)
             if url.path == "/api/init":
-                return self._send(200, {"profiles": profiles(), "tasks": settings.read_task_list()})
+                return self._send(200, {"profiles": profiles(), "tasks": settings.read_task_list(),
+                                        "programs": stimulus_programs()})
             if url.path == "/api/live":
                 try:
                     since = int(q.get("since", ["-1"])[0])
@@ -145,10 +180,10 @@ def make_handler(manager: Manager):
                     raise ValueError("no session")
                 if self.path == "/api/pause":
                     s.set_paused(bool(body.get("paused")))
-                    return self._send(200, s.monitor())
+                    return self._send(200, manager.monitor())
                 if self.path == "/api/stop":
                     s.request_stop("operator_stopped")
-                    return self._send(200, s.monitor())
+                    return self._send(200, manager.monitor())
                 return self._send(404, {"error": "not found"})
             except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
                 return self._send(400, {"error": str(exc)})
