@@ -1,0 +1,19 @@
+# External stimulus/decoder modules over LSL (protocol speller-link@1).
+# The speller never draws stimuli: see stimulus_kit/README.md.
+inherits: default.yaml
+participant_id: EXT-001
+run_mode: live
+task_id: FREE
+physiology:
+  plugin: external
+stimulus: {paradigm: row_column, flash_ms: 100, isi_ms: 150, pause_ms: 1000}
+epoch: {n_repetitions: 5}
+detector: {mode: label, tau: 0.5, max_retries: 2, cold_start_symbols: 0}
+external:
+  stop_confidence: 0.99        # send "stop" when the posterior max reaches this; null = never
+  min_updates_before_stop: 12  # at least one full repetition of rows+columns (one update per flash)
+  stop_grace_s: 1.5            # after "stop": how long to wait for a final likelihood
+  decode_wait_s: 2.0           # after "done": how long to wait for a final likelihood
+  epoch_timeout_s: 120
+  wait_modules_s: 60
+  send_text: true

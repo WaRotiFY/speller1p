@@ -1,0 +1,3 @@
+# Same as ext_default.yaml, without the early stop signal: modules finish all repetitions.
+inherits: ext_default.yaml
+external: {stop_confidence: null}

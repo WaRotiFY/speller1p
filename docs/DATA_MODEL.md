@@ -216,3 +216,20 @@ runs/
 - Добавление нового типа события или необязательного поля — без смены версии.
 - Переименование, удаление поля или изменение его смысла — новая версия `eeg-speller/events@2`, конвертер старых журналов в `scripts/`.
 - Этот документ и `scripts/gen_data_model.py` должны совпадать: тест сверяет каталог событий в коде с таблицами разделов 6 и 7.
+
+## 12. Режим внешних модулей (ветка external-stimulus)
+
+Сессии, записанные `eeg_speller.external`, используют ту же схему `eeg-speller/events@1` с такими отличиями:
+
+| Тип | Блок | Отличие |
+|---|---|---|
+| `session_started` | Session Recorder | `paradigm: "external"`, `protocol: "speller-link@1"` |
+| `epoch_started` | One Epoch | рекомендуемые модулю `flash_ms`, `isi_ms`, `n_repetitions` и `stop_confidence`; фактическую стимуляцию определяет модуль |
+| `stimulus_event` | Presentation Method | `symbols`, `indices`, `module`, `onset_lsl_s` — метка LSL момента flip, пересчитанная в часы LSL компьютера спеллера; `timing_method: module_flip_lsl_timestamp` |
+| `physiology_observation` | EEG / EOG source | пишется на **каждое** обновление от декодера; `update` — номер обновления, `module_metrics.final`, `module_metrics.module` |
+| `epoch_stop_requested` (новый) | Presentation Method | `confidence`, `threshold`, `updates`, `flashes`, `elapsed_s` — отправлен сигнал `stop` (MA-34) |
+| `posterior_computed` | Statistical Inference | `decided_on`: `final_likelihood` \| `stop_grace_elapsed` \| `done_grace_elapsed` \| `timeout` |
+| `presentation_feedback` | Influence on presentation method | `sent: "result"` — модулю отправлен выбранный символ |
+| `warning` | EEG / EOG source | отклонённое сообщение декодера с причиной |
+
+Сырой сигнал ЭЭГ спеллер не получает и не записывает: это делает модуль физиологов или рекордер LSL (например, LabRecorder), записывающий все потоки `Speller*` вместе с ЭЭГ в XDF.

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Спеллер — оператор</title>
+  <link rel="stylesheet" href="/operator.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">ЭЭГ-спеллер <span>оператор</span></div>
+    <div class="bar-right">
+      <span id="modules-pill" class="pill off">модули: нет</span>
+      <span id="phase-pill" class="pill">нет сессии</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- 1. Start -->
+    <section id="start" class="card">
+      <h2>Новая сессия</h2>
+      <div class="grid">
+        <label>Участник <input id="participant" value="P001" maxlength="32" autocomplete="off"></label>
+        <label>Профиль <select id="profile"></select></label>
+        <label class="wide">Задание
+          <select id="task">
+            <option value="free">Свободный набор</option>
+            <option value="custom">Своя фраза…</option>
+          </select>
+        </label>
+        <label class="wide hidden" id="custom-row">Фраза <input id="custom" maxlength="200" autocomplete="off"></label>
+      </div>
+      <p class="hint">Экран испытуемого показывает отдельная программа стимуляции. Запустите её до или после старта — спеллер подождёт.</p>
+      <button id="start-btn" class="primary">Начать сессию</button>
+      <p id="start-error" class="error"></p>
+    </section>
+
+    <!-- 2. Running -->
+    <section id="run" class="hidden">
+      <div class="card text-card">
+        <div class="label">Набрано</div>
+        <div id="typed" class="typed"></div>
+        <div id="corrected-row" class="sub hidden">исправлено БЯМ: <span id="corrected"></span></div>
+        <div id="target-row" class="sub hidden">задание: <span id="target"></span></div>
+      </div>
+
+      <div class="row">
+        <div class="card now">
+          <div class="label">Сейчас <span id="epoch-no" class="muted"></span></div>
+          <div class="leader"><span id="leader">—</span><span id="leader-p" class="muted"></span></div>
+          <div class="meter"><div id="meter-fill"></div><div id="meter-stop" title="порог остановки"></div></div>
+          <div class="facts"><span id="flashes"></span><span id="elapsed"></span><span id="stop-badge" class="badge hidden">стоп отправлен</span></div>
+        </div>
+        <div class="card stats">
+          <div class="label">Итоги</div>
+          <dl>
+            <dt>Выбрано</dt><dd id="s-selected">0</dd>
+            <dt>Точность</dt><dd id="s-acc">—</dd>
+            <dt>Досрочных остановок</dt><dd id="s-early">0</dd>
+            <dt>Средняя эпоха</dt><dd id="s-epoch">—</dd>
+            <dt>Скорость</dt><dd id="s-speed">—</dd>
+          </dl>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="pause-btn">Пауза</button>
+        <button id="stop-btn" class="danger">Завершить</button>
+        <button id="new-btn" class="hidden primary">Новая сессия</button>
+        <span id="end-note" class="muted"></span>
+      </div>
+
+      <details class="card more">
+        <summary>Подробнее</summary>
+        <h3>Модули</h3>
+        <ul id="modules" class="plain"></ul>
+        <h3>Кандидаты сейчас</h3>
+        <div id="top" class="chips"></div>
+        <div id="words" class="muted"></div>
+        <h3>Последние эпохи</h3>
+        <table><thead><tr><th>#</th><th>цель</th><th>выбор</th><th>увер.</th><th>вспышек</th><th>сек</th><th>как решено</th></tr></thead>
+          <tbody id="log"></tbody></table>
+        <h3>Коррекции</h3>
+        <ul id="corrections" class="plain"></ul>
+        <p class="muted">Каталог записи: <code id="dir"></code></p>
+      </details>
+    </section>
+  </main>
+  <script src="/operator.js"></script>
+</body>
+</html>

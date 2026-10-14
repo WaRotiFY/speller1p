@@ -1,0 +1,3 @@
+# Same as ext_default.yaml, without the language model (REQ-PERF-04 baseline).
+inherits: ext_default.yaml
+mode: {llm: 'off'}

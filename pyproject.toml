@@ -15,6 +15,7 @@ remote = ["httpx"]
 parquet = ["pyarrow"]
 eeg = ["pyedflib>=0.1.40,<0.2"]
 lsl = ["pylsl>=1.17,<2"]
+external = ["pylsl>=1.17,<2", "pygame>=2.5"]
 
 [tool.setuptools.packages.find]
 include = ["eeg_speller*"]
