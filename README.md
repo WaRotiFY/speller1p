@@ -60,7 +60,7 @@
 ```powershell
 winget install --id Git.Git -e
 winget install --id astral-sh.uv -e
-git clone https://github.com/biospellerorg/speller1p.git
+git clone -b release-0.2 https://github.com/biospellerorg/speller1p.git
 cd speller1p
 uv python install 3.12
 uv venv --python 3.12
