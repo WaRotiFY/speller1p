@@ -6,15 +6,18 @@ build-backend = "setuptools.build_meta"
 name = "eeg-speller"
 version = "0.2.0"
 requires-python = ">=3.11"
-dependencies = ["numpy>=1.24", "pydantic>=2,<3", "PyYAML>=6", "scipy>=1.11"]
+# Everything needed to run the speller, the stimulation modules and the decoder example.
+dependencies = ["numpy>=1.24", "pydantic>=2,<3", "PyYAML>=6", "scipy>=1.11",
+                "pylsl>=1.17,<2", "pygame>=2.5", "pyedflib>=0.1.40,<0.2"]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "pyedflib>=0.1.40,<0.2"]
-hf = ["transformers", "torch"]
-parquet = ["pyarrow"]
-eeg = ["pyedflib>=0.1.40,<0.2"]
-external = ["pylsl>=1.17,<2", "pygame>=2.5"]
-kenlm = ["kenlm"]
+dev = ["pytest>=8", "pyarrow"]              # tests and Parquet tables
+hf = ["transformers", "torch"]              # neural fast LM from Hugging Face (several GB)
+kenlm = ["kenlm"]                           # word KenLM fast LM; needs a C++ compiler, see models/kenlm/README.md
+# Old names kept so earlier install commands still work.
+test = ["pytest>=8"]
+external = []
+eeg = []
 
 [tool.setuptools.packages.find]
 include = ["eeg_speller*"]

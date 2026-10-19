@@ -12,7 +12,6 @@
 ## Проверка без оборудования
 
 ```powershell
-uv pip install -e ".[external,eeg]"
 uv run --no-sync python -m eeg_speller.physiology.edf_demo --text "привет"
 uv run --no-sync python scripts/run_external_demo.py edf
 ```

@@ -47,7 +47,7 @@ class EDFSource:
         try:
             import pyedflib
         except ImportError:
-            raise ValueError("EDF support requires: uv pip install -e .[eeg]") from None
+            raise ValueError("EDF support requires pyedflib: uv pip install -e .") from None
         self.path = Path(cfg["path"]).resolve()
         if not self.path.is_file():
             raise ValueError(f"EDF not found: {self.path}; generate or select a recording")

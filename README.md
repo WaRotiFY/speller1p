@@ -64,17 +64,17 @@ git clone https://github.com/biospellerorg/speller1p.git
 cd speller1p
 uv python install 3.12
 uv venv --python 3.12
-uv pip install -e ".[external,eeg,test]"
+uv pip install -e ".[dev]"
 uv run --no-sync python -m pytest -q
 ```
 
-| Набор | Что ставит | Зачем |
-|---|---|---|
-| `external` | `pylsl`, `pygame` | связь с модулями и сами модули стимуляции — нужен всегда |
-| `eeg` | `pyedflib` | пример декодера P300 и проигрывание EDF |
-| `kenlm` | `kenlm` | словная n-грамма (лучшая быстрая БЯМ). На Windows нужна сборка из исходников, см. [`models/kenlm/README.md`](models/kenlm/README.md) |
-| `hf` | `transformers`, `torch` | нейросети с Hugging Face как быстрая БЯМ |
-| `test` | `pytest` | тесты |
+`uv pip install -e .` ставит всё, что нужно для работы: спеллер, LSL, pygame для модулей стимуляции, чтение EDF. `[dev]` добавляет тесты. Два тяжёлых варианта быстрой БЯМ ставятся отдельно, когда понадобятся:
+
+| Команда | Что добавляет |
+|---|---|
+| `uv pip install -e ".[dev]"` | `pytest`, `pyarrow` — тесты и таблицы Parquet |
+| `uv pip install -e ".[hf]"` | `transformers`, `torch` (несколько ГБ) — нейросети с Hugging Face |
+| `uv pip install -e ".[kenlm]"` | `kenlm` — словная n-грамма; нужен компилятор C++, на Python 3.13 — сборка из исходников ([`models/kenlm/README.md`](models/kenlm/README.md)) |
 
 Все команды ниже запускаются из папки проекта через `uv run --no-sync`, активировать окружение не нужно.
 
