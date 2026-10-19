@@ -69,11 +69,18 @@
     <section class="block" id="b-fast">
       <h2><span class="num">3</span>быстрая БЯМ <span class="hint-inline">подсказка следующей буквы в каждой эпохе</span></h2>
       <div class="seg" id="fast-backend" data-value="ngram">
-        <button data-v="ngram">n-грамма</button><button data-v="hf_causal">hugging face</button><button data-v="mock_ngram">mock</button>
+        <button data-v="ngram" title="буквенная 4-грамма из models/ngram">4-грамма</button><button data-v="kenlm" title="словная n-грамма KenLM, по имени на Hugging Face или файлу">KenLM</button><button data-v="hf_causal" title="нейросеть с Hugging Face по имени">HF</button><button data-v="mock_ngram" title="учебная 5-грамма на маленьком корпусе">mock</button>
       </div>
       <div id="fast-ngram" class="grid">
         <label class="wide">модель <select id="ngram-file"></select></label>
         <p id="ngram-info" class="muted small wide"></p>
+      </div>
+      <div id="fast-kenlm" class="grid hidden">
+        <label class="wide">модель KenLM: имя на huggingface.co или путь к .arpa / .bin <input id="kenlm-id" autocomplete="off"></label>
+        <label>доля буквенной 4-граммы λ <input id="kenlm-mix" type="number" min="0" max="1" step="0.05" value="0.1"></label>
+        <label>слов в словаре <input id="kenlm-vocab" type="number" min="1000" max="500000" step="1000" value="60000"></label>
+        <label class="check wide"><input type="checkbox" id="kenlm-download"> разрешить скачать (≈1,5 ГБ, один раз в models/kenlm)</label>
+        <p id="kenlm-info" class="muted small wide"></p>
       </div>
       <div id="fast-hf" class="grid hidden">
         <label class="wide">имя модели на huggingface.co <input id="hf-model" placeholder="Qwen/Qwen2.5-0.5B" autocomplete="off"></label>

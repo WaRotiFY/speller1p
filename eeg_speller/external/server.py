@@ -26,6 +26,7 @@ from eeg_speller.epoch.plugins import list_plugins
 from eeg_speller.external.controller import ExternalSession, default_model_factory
 from eeg_speller.external.launcher import StimulusProcess, build_args, merge_settings, stimulus_programs
 from eeg_speller.llm.backends import chat_api
+from eeg_speller.llm.backends import kenlm_words
 from eeg_speller.llm.backends.char_ngram import available_models
 from eeg_speller.web import settings
 from eeg_speller.web.server import resolve_task
@@ -87,6 +88,16 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
                              "allow_download": bool(fast.get("allow_download")),
                              "device": fast.get("device") if fast.get("device") in ("cpu", "cuda", "mps") else "cpu"}
         passport["fast"] = model_id
+    elif backend == "kenlm":
+        model_id = str(fast.get("kenlm_id") or kenlm_words.DEFAULT_REPO).strip()
+        if not model_id or len(model_id) > 300:
+            raise ValueError("enter a Hugging Face name or a path to a KenLM file")
+        patch["fast_llm"] = {"backend": "kenlm", "model_id": model_id,
+                             "allow_download": bool(fast.get("allow_download")),
+                             "char_mix": _num(fast.get("char_mix", 0.1), 0.0, 1.0, "char n-gram share"),
+                             "vocab_limit": _num(fast.get("vocab_limit", 60000), 1000, 500000, "vocabulary",
+                                                 integer=True)}
+        passport["fast"] = f"KenLM {model_id.split('/')[-1]}"
     elif backend == "mock_ngram":
         patch["fast_llm"] = {"backend": "mock_ngram", "model_id": "mock-ngram-5"}
         passport["fast"] = "mock-ngram-5"
@@ -240,8 +251,12 @@ class Manager:
                 s.wait_change(s.version, 0.5)
         s = self.session
         # Versions of different sessions must never collide on the client side.
+        loading = self.loading
+        st = kenlm_words.download_status
+        if loading and st.get("file"):
+            loading += f" — скачано {st['done_mb']} из {st['total_mb']} МБ ({st['file']})"
         return {"version": (id(s) % 10**6) * 10**6 + s.version if s else 0,
-                "session": self.monitor(), "loading": self.loading}
+                "session": self.monitor(), "loading": loading}
 
 
 def init_payload() -> dict:
@@ -250,6 +265,8 @@ def init_payload() -> dict:
             "keyboards": {k: {"label": v["label"], "symbols": v["symbols"], "layout": v["layout"]}
                           for k, v in PRESETS.items()},
             "fast_models": available_models(), "inference": list_plugins(),
+            "kenlm": {"available": kenlm_words.kenlm_available(), "default": kenlm_words.DEFAULT_REPO,
+                      "downloaded": kenlm_words.downloaded_models()},
             "providers": chat_api.provider_list(),
             "prompt": {"current": chat_api.read_prompt(), "default": chat_api.read_prompt("default"),
                        "edited": chat_api.USER_PROMPT.is_file()},

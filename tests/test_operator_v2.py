@@ -283,3 +283,30 @@ def test_hf_adapter_heals_tokens_and_marginalizes(monkeypatch):
     assert rep.symbols[int(p.argmax())] == "о"
     q = np.exp(ngram.predict("спасиб", rep).log_p)
     assert np.argmax(p) == np.argmax(q)
+
+
+# ------------------------------------------------------------- word KenLM model
+def test_word_kenlm_gives_letters_and_words(tmp_path):
+    pytest.importorskip("kenlm")
+    import subprocess
+    import sys
+    from eeg_speller.llm.backends.kenlm_words import KenLMWords, default_char_model
+    from eeg_speller.core.keyboard import LM_ALPHABET
+    corpus = tmp_path / "c.txt"
+    corpus.write_text("мне нужно выпить воды. мне нужно выпить чаю. мне нужно поспать. я хочу пить. я хочу спать.\n" * 5,
+                      encoding="utf-8")
+    arpa = tmp_path / "m.arpa"
+    subprocess.run([sys.executable, str(ROOT / "scripts" / "make_test_arpa.py"), str(corpus), str(arpa)], check=True)
+    model = KenLMWords({"model_id": str(arpa), "char_mix": 0.1}, default_char_model())
+    p = model.lm_distribution("мне нужно выпить в")
+    assert LM_ALPHABET[int(np.argmax(p))] == "о"                 # «воды» is the only word starting with «в»
+    q = model.lm_distribution("я хочу п")
+    assert LM_ALPHABET[int(np.argmax(q))] == "и"
+    end = model.lm_distribution("я хочу пить")
+    assert end[LM_ALPHABET.index(".")] + end[LM_ALPHABET.index(" ")] > 0.5   # word finished: boundary
+    words = [w for w, _ in model.top_words("мне нужно выпить ", 3)]
+    assert set(words) >= {"воды", "чаю"}
+    odd = model.lm_distribution("я хочу пкщ")                    # nothing in the vocabulary: char 4-gram
+    assert odd.sum() == pytest.approx(1.0) and np.all(odd > 0)
+    rep = Repertoire(tuple(PRESETS["abc_6x6"]["symbols"]))
+    assert model.predict("мне нужно выпить в", rep).log_p.shape == (36,)

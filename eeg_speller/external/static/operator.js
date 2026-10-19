@@ -63,6 +63,7 @@ async function boot() {
   sFast = seg("fast-backend", (v) => {
     $("fast-ngram").classList.toggle("hidden", v !== "ngram");
     $("fast-hf").classList.toggle("hidden", v !== "hf_causal");
+    $("fast-kenlm").classList.toggle("hidden", v !== "kenlm");
   });
   sCtx = seg("fast-context");
   for (const m of init.fast_models) $("ngram-file").add(new Option(m.file, m.file));
@@ -118,10 +119,19 @@ function restore() {
   $("kb-rows").value = s.kbRows || 6;
   $("kb-cols").value = s.kbCols || 6;
   keyboardChanged();
-  sFast.set(s.fastBackend || "ngram");
+  const kenlmReady = init.kenlm.available && init.kenlm.downloaded.length > 0;
+  sFast.set(s.fastBackend || (kenlmReady ? "kenlm" : "ngram"));
   if (s.ngramFile && init.fast_models.some((m) => m.file === s.ngramFile)) $("ngram-file").value = s.ngramFile;
   ngramInfo();
   $("hf-model").value = s.hfModel || "";
+  $("kenlm-id").value = s.kenlmId || init.kenlm.default;
+  $("kenlm-mix").value = s.kenlmMix ?? 0.1;
+  $("kenlm-vocab").value = s.kenlmVocab ?? 60000;
+  $("kenlm-download").checked = !!s.kenlmDownload;
+  const kd = init.kenlm.downloaded.map((m) => m.id);
+  txt($("kenlm-info"), (init.kenlm.available ? "" : "пакет kenlm не установлен: pip install -e \".[kenlm]\" (см. models/kenlm/README.md). ") +
+    (kd.length ? `скачаны: ${kd.join(", ")}` : "моделей ещё не скачано") +
+    ". словная модель даёт следующую букву через сумму вероятностей слов, продолжающих начатое слово; λ — доля буквенной 4-граммы на случай опечаток и редких слов.");
   $("hf-download").checked = !!s.hfDownload;
   $("hf-device").value = s.hfDevice || "cpu";
   sCtx.set(s.context || "primary");
@@ -152,6 +162,8 @@ function collectSaved() {
     kbSymbols: $("kb-symbols").value, kbRows: +$("kb-rows").value, kbCols: +$("kb-cols").value,
     fastBackend: sFast.get(), ngramFile: $("ngram-file").value, hfModel: $("hf-model").value.trim(),
     hfDownload: $("hf-download").checked, hfDevice: $("hf-device").value, context: sCtx.get(),
+    kenlmId: $("kenlm-id").value.trim(), kenlmMix: +$("kenlm-mix").value, kenlmVocab: +$("kenlm-vocab").value,
+    kenlmDownload: $("kenlm-download").checked,
     plugin: $("inf-plugin").value, stopConf: +$("stop-conf").value, stopMin: +$("stop-min").value,
     pauseMs: +$("pause-ms").value, stopOff: $("stop-off").checked, slowBackend: sSlow.get(),
     provider: $("provider").value, baseUrl: $("base-url").value.trim(), slowModel: $("slow-model").value.trim(),
@@ -353,7 +365,9 @@ async function start() {
         windowed: $("windowed").checked, args: $("program-args").value },
       keyboard: keyboardSpec(),
       fast: { backend: sFast.get(), model_file: $("ngram-file").value, model_id: $("hf-model").value.trim(),
-        allow_download: $("hf-download").checked, device: $("hf-device").value, context_source: sCtx.get() },
+        allow_download: sFast.get() === "kenlm" ? $("kenlm-download").checked : $("hf-download").checked,
+        device: $("hf-device").value, context_source: sCtx.get(),
+        kenlm_id: $("kenlm-id").value.trim(), char_mix: +$("kenlm-mix").value, vocab_limit: +$("kenlm-vocab").value },
       inference: { plugin: $("inf-plugin").value, params: pluginParamValues() },
       stop: { confidence: $("stop-off").checked ? null : +$("stop-conf").value, min_updates: +$("stop-min").value },
       pause_ms: +$("pause-ms").value,
