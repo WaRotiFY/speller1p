@@ -219,3 +219,7 @@ __marimo__/
 # Experiment artifacts may contain participant text and must stay local.
 runs/
 data/corpus_ru.txt
+
+# Local operator settings and module logs
+prompts/user/
+logs/

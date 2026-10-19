@@ -59,10 +59,10 @@ class MockNGram:
 
     def predict(self, context, repertoire):
         # ASSUMPTION[MA-08]
-        probs = self._dist(_context(context), repertoire.symbols)
-        bs = float(self.cfg["char_marginal"]["backspace_prob"])
-        probs *= 1 - bs
-        probs[repertoire.index("⌫")] = bs
+        from eeg_speller.core.keyboard import LM_ALPHABET, keyboard_text, project
+        lm = self._dist(_context(keyboard_text(context)), tuple(LM_ALPHABET))
+        probs = project(lm, repertoire.symbols, float(self.cfg["char_marginal"]["backspace_prob"]),
+                        float(self.cfg.get("other_prob", 0.005)))
         return SymbolDistribution(repertoire, log_probs(probs), f"fast_llm:{self.model_id}", len(context))
 
     def top_words(self, context: str, n: int):

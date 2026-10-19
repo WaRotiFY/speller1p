@@ -95,7 +95,7 @@ class EpochRunner:
         start = time.perf_counter_ns()
         if cfg.mode["llm"] == "off":
             # ASSUMPTION[MA-13]
-            prior = SymbolDistribution(self.rep, log_probs(np.ones(36)), "uniform", len(self.primary.value))
+            prior = SymbolDistribution(self.rep, log_probs(np.ones(len(self.rep.symbols))), "uniform", len(self.primary.value))
             model_id = "uniform"
         else:
             context = self.primary.value if cfg.fast_llm["context_source"] == "primary" else self.secondary.value

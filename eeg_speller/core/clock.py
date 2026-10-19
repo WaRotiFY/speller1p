@@ -7,6 +7,7 @@ class Clock:
         self.live = live
         self.now = 0
         self.start = time.monotonic_ns() if live else 0
+        self.lsl = None              # callable returning LSL seconds, set by live sessions
 
     def t_ns(self) -> int:
         return time.monotonic_ns() - self.start if self.live else self.now

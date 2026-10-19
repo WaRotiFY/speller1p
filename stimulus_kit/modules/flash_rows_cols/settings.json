@@ -1,0 +1,20 @@
+{
+    "_о_модуле": "Мигание: в течение одного Trial по очереди загораются все строки и все столбцы клавиатуры. Буквы и раскладку присылает спеллер.",
+    "FPS": 60,
+    "n_trials": 10,
+    "min_gap": 2,
+    "flash_ms": 100,
+    "isi_ms": 75,
+    "cue_ms": 1000,
+    "rest_before_ms": 1000,
+    "rest_after_ms": 1000,
+    "font_name": "Arial",
+    "font_size": 80,
+    "background": [12, 14, 20],
+    "letter_color": [90, 96, 110],
+    "highlight_color": [255, 255, 255],
+    "cue_color": [255, 196, 60],
+    "show_text": true,
+    "window_x": 0,
+    "window_y": -1920
+}

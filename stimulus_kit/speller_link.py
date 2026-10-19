@@ -52,11 +52,18 @@ class Epoch:
         self.layout = tuple(msg.get("layout") or (6, 6))
         self.text = msg.get("text", "")
         self.settings = dict(msg.get("settings") or {})
+        # Symbol to attend, sent only in copy-spelling / calibration sessions; else None.
+        self.cue = msg.get("cue")
 
     def rows(self):
         """Symbols split into rows of the layout (a convenience for matrix displays)."""
         cols = self.layout[1]
         return [self.symbols[i:i + cols] for i in range(0, len(self.symbols), cols)]
+
+    def cell(self, symbol):
+        """(row, column) of ``symbol`` in the layout."""
+        i = self.symbols.index(symbol)
+        return divmod(i, self.layout[1])
 
     def __repr__(self):
         return "Epoch(id=%d, text=%r)" % (self.id, self.text)
@@ -70,7 +77,7 @@ class SpellerLink:
     publishes its control stream; set it to 0 to start without a speller.
     """
 
-    def __init__(self, name="stimulus", role="stimulus", wait_for_speller=30.0):
+    def __init__(self, name="stimulus", role="stimulus", wait_for_speller=60.0):
         self.name = name
         self.role = role
         uid = "%s-%d" % (name, int(time.time() * 1000))

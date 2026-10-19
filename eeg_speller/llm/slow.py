@@ -40,7 +40,11 @@ class CorrectionScheduler:
         self.last_count = count
         if count <= self.cfg["min_context_words"] and primary[-1] != ".":
             return None
-        start = max(0, count - self.cfg["window_words"])
+        # IMPROV[Q-40]
+        every = max(1, int(self.cfg.get("every_n_words", 1)))
+        if trigger == "word_end" and count % every and primary[-1] != ".":
+            return None
+        start = max(0, count - max(int(self.cfg["window_words"]), every))
         window = [m.group() for m in matches[start:]]
         left = primary[:matches[start].start()] if window else primary
         request = CorrectionRequest(self.next_id, trigger, window, start, left)
@@ -67,6 +71,9 @@ def create_slow(cfg, allow_remote: bool, corpus):
     if backend == "local_openai":
         from eeg_speller.llm.backends.local_openai import LocalOpenAICorrection
         return LocalOpenAICorrection(cfg)
+    if backend == "chat_api":
+        from eeg_speller.llm.backends.chat_api import ChatCorrection
+        return ChatCorrection(cfg, allow_remote)
     if backend == "hf_causal":
         raise NotImplementedError("local slow HF correction generation is not implemented")
     raise ValueError(f"unknown slow backend: {backend}")

@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def check():
     assumptions = (ROOT / "docs" / "ASSUMPTIONS.md").read_text(encoding="utf-8")
     questions = (ROOT / "docs" / "OPEN_QUESTIONS.md").read_text(encoding="utf-8")
-    code = "\n".join(p.read_text(encoding="utf-8") for p in (ROOT / "eeg_speller").rglob("*.py"))
+    code = "\n".join(p.read_text(encoding="utf-8") for folder in ("eeg_speller", "stimulus_kit", "inference")
+                     for p in (ROOT / folder).rglob("*.py"))
     known_ma = set(re.findall(r"^### (MA-\d\d)\.", assumptions, re.M))
     known_q = set(re.findall(r"^### (Q-\d\d)\.", questions, re.M))
     marked_ma = set(re.findall(r"# ASSUMPTION\[(MA-\d\d)\]", code))

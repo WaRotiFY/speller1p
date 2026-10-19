@@ -30,11 +30,17 @@ class SessionRecorder:
         event = {"schema": "eeg-speller/events@1", "session_id": self.session_id,
                  "participant_id": self.participant_id, "seq": self.seq,
                  "t_ns": self.clock.t_ns() if t_ns is None else t_ns,
+                 **self._lsl(),
                  "block": block, "type": kind, "epoch_id": epoch_id,
                  "payload": serializable(payload)}
         self.file.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
         self.seq += 1
         return event
+
+    def _lsl(self) -> dict:
+        """Live sessions also stamp every event with the LSL clock shared with EEG and markers."""
+        source = getattr(self.clock, "lsl", None)
+        return {"lsl_s": round(float(source()), 6)} if source is not None else {}
 
     def close(self):
         self.file.close()
