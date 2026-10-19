@@ -40,9 +40,9 @@ class Config(BaseModel):
     def check_repertoire(cls, v: dict) -> dict:
         # ASSUMPTION[MA-01]
         # IMPROV[Q-07]
-        symbols = v.get("symbols", [])
-        if len(symbols) != 36 or len(set(symbols)) != 36 or list(v.get("layout", [])) != [6, 6]:
-            raise ValueError("repertoire must contain 36 distinct symbols in a 6x6 layout")
+        # IMPROV[Q-38]
+        from eeg_speller.core.keyboard import validate_keyboard
+        validate_keyboard(v.get("symbols", []), v.get("layout", [0, 0]))
         return v
 
     @field_validator("stimulus")

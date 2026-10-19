@@ -1,5 +1,0 @@
-inherits: gui_slow.yaml
-stimulus:
-  flash_ms: 300
-  isi_ms: 200
-  pause_ms: 800

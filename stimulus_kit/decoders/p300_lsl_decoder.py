@@ -9,7 +9,7 @@ and publishes ``SpellerLikelihood`` updates after every scored flash.
 Swap it for the physiologists' own decoder at any time: the speller only reads
 ``SpellerLikelihood``.
 
-    python stimulus_kit/decoders/p300_lsl_decoder.py --profile configs/gui_lsl.yaml --eeg-name EDFReplayEEG
+    python stimulus_kit/decoders/p300_lsl_decoder.py --profile configs/p300_decoder.yaml --eeg-name EDFReplayEEG
 """
 import argparse
 import json
@@ -78,7 +78,7 @@ class FlashCollector:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--profile", type=Path, default=ROOT / "configs" / "gui_lsl.yaml",
+    ap.add_argument("--profile", type=Path, default=ROOT / "configs" / "p300_decoder.yaml",
                     help="YAML with a physiology block (channels, filters, model_path, source)")
     ap.add_argument("--eeg-name", help="LSL EEG stream name (overrides the profile's source)")
     ap.add_argument("--model", type=Path, help="calibrated P300 model JSON (overrides model_path)")

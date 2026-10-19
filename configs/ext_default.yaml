@@ -9,6 +9,19 @@ physiology:
 stimulus: {paradigm: row_column, flash_ms: 100, isi_ms: 150, pause_ms: 1000}
 epoch: {n_repetitions: 5}
 detector: {mode: label, tau: 0.5, max_retries: 2, cold_start_symbols: 0}
+fast_llm:
+  backend: ngram               # pretrained character 4-gram from models/ngram (MA-10, Q-39)
+  model_id: ru-char4
+  model_file: ru_char4.npz
+slow_llm:
+  backend: mock_dictionary     # chat_api: Ollama / OpenRouter / Groq / NVIDIA / own URL (Q-41)
+  provider: ollama
+  model_id: mock-dictionary-1
+  every_n_words: 1             # run the correction after every N finished words (Q-40)
+  window_words: 3
+  include_alternatives: true   # send top-K posterior letters of every character (Q-17)
+  alternatives_k: 4
+  prompt_file: prompts/correction_v2.txt
 external:
   stop_confidence: 0.99        # send "stop" when the posterior max reaches this; null = never
   min_updates_before_stop: 12  # at least one full repetition of rows+columns (one update per flash)
@@ -17,3 +30,4 @@ external:
   epoch_timeout_s: 120
   wait_modules_s: 60
   send_text: true
+  send_cue: false              # copy-spelling / calibration: tell the module the target symbol (Q-42)

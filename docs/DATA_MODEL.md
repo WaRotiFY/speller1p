@@ -1,7 +1,6 @@
 # DATA_MODEL — структура данных Session Recorder и Storage
 
-Версия схемы данных: `eeg-speller/events@1`. Документ от 29.09.2026. Архитектура: v3.
-Связанные документы: `ARCHITECTURE.md`, `ASSUMPTIONS.md`, `OPEN_QUESTIONS.md`.
+Версия схемы данных: `eeg-speller/events@1`. Связанные документы: [`ARCHITECTURE.md`](ARCHITECTURE.md); ссылки вида MA-NN и Q-NN ведут в [`research/`](research/).
 Связанные требования: NEED-F-11, NEED-F-12, NEED-F-13, NEED-F-14, NEED-M-01.
 
 ## 1. Принципы
@@ -60,7 +59,7 @@ runs/
 | `run_mode` | str | `simulate` \| `replay` \| `semi_synthetic` \| `live` |
 | `llm_mode` | str | `on` \| `off` (MA-13) |
 | `paradigm` | str | `row_column` \| `single_symbol` (Q-06) |
-| `repertoire` | list[str] | 36 символов в порядке векторов (MA-01) |
+| `repertoire` | list[str] | символы клавиатуры в порядке векторов (MA-01, MA-35) |
 | `seed` | int | сид генератора случайных чисел |
 | `code_version` | str | git-хеш или версия пакета |
 | `models` | object | `{"fast_llm": {...}, "slow_llm": {...}, "physiology": {...}}` — бэкенд, `model_id`, версия, хеш весов или промпта |
@@ -93,7 +92,7 @@ runs/
 | `session_id`, `participant_id` | str | дублируются в каждом событии, чтобы журналы разных сессий можно было объединять |
 | `seq` | int | сквозной номер без пропусков |
 | `t_ns` | int | время события по часам системы, нс от `clock.t0_ns` |
-| `block` | str | имя блока по схеме v3 (или `ext:<имя>` для точек расширения) |
+| `block` | str | имя блока спеллера (или `ext:<имя>` для дополнительных функций) |
 | `type` | str | тип события (раздел 6) |
 | `epoch_id` | int \| null | эпоха, к которой относится событие |
 | `payload` | object | данные события |
@@ -113,7 +112,7 @@ runs/
 | `session_resumed` | Session Recorder | `next_epoch_id` — конец паузы; время паузы не входит в оперативную скорость окна экспериментатора |
 | `warning`, `error` | любой | `module`, `message`, `details` |
 
-### 6.2 Эпоха и физиология (заглушка)
+### 6.2 Эпоха и физиология
 
 | Тип | Блок | Payload |
 |---|---|---|
@@ -121,7 +120,10 @@ runs/
 | `stimulus_event` | Presentation Method | `rep`, `flash_idx`, `group` (индексы символов), `onset_t_ns`, `duration_ms`, `sim_is_target` |
 | `physiology_observation` | EEG / EOG source | `log_p[36]`, `semantics`, `source` (`simulated` + параметры d′, λ), `per_repetition` (опц.), `module_metrics` (опц.), `t_module_ns` (опц.), `sim_flash_scores` (опц., матрица n_rep × F) |
 | `presentation_feedback` | Influence on presentation method | `decided`, `top_k` ([символ, p]) |
-| `presentation_feedback_received` | Presentation Method | `action` (`logged_ignored` для заглушки) |
+| `presentation_feedback_received` | Presentation Method | `action` (`logged_ignored` в симуляции) |
+| `epoch_stop_requested` | Presentation Method | `confidence`, `threshold`, `updates`, `flashes`, `elapsed_s` — модулю отправлен `stop` |
+| `epoch_aborted` | One Epoch | `reason` — эпоха прервана (нет данных, таймаут, завершение сессии) |
+| `epoch_timeline` | One Epoch | моменты шагов эпохи по LSL и в мс от старта эпохи (раздел 13) |
 
 ### 6.3 Языковая часть и слияние
 
@@ -136,7 +138,7 @@ runs/
 | `correction_completed` | Post-factum Text Correction | `correction_id`, `words_in`, `words_out`, `accepted`, `reject_reason`, `wall_latency_ms` |
 | `secondary_text_updated` | Secondary (Corrected) Text | `correction_id`, `text`, `frozen_upto_word` |
 
-### 6.4 RL-блок (заглушка)
+### 6.4 Псевдометки по исправлениям
 
 | Тип | Блок | Payload |
 |---|---|---|
@@ -164,7 +166,7 @@ runs/
 | 6 | Распределение от физиологии | EEG / EOG source | событие `physiology_observation`, `log_p[36]` | `t_ns`; `t_module_ns` внешнего модуля | конец эпохи | **да — основной вход replay** | NEED-F-04, F-13 | контракт MA-03, Q-01 |
 | 7 | Сырой сигнал ЭЭГ/ЭОГ | EEG / EOG source (внешний модуль) | ссылка в `external/refs.json` + sha256 | часы внешнего модуля | по завершении сессии | нет | NEED-F-13 | в прототипе отсутствует; ответственность модуля физиологии, Q-30 |
 | 8 | Априорное распределение следующего символа | Source Model → Symbol Distribution | событие `prior_computed`, `log_p[36]` | `t_ns`, `wall_latency_ms` | начало эпохи | нет (пересчитывается) | NEED-F-06, F-13 | хранится для анализа и EXP-01 |
-| 9 | Кандидаты следующего слова Top-N | `ext:word_prediction` | событие `word_candidates` | `t_ns`, `wall_latency_ms` | начало эпохи | нет (пересчитывается) | NEED-F-08, REQ-LLM-03 | нет на схеме v3, Q-08 |
+| 9 | Кандидаты следующего слова Top-N | `ext:word_prediction` | событие `word_candidates` | `t_ns`, `wall_latency_ms` | начало эпохи | нет (пересчитывается) | NEED-F-08, REQ-LLM-03 | Q-08 |
 | 10 | Апостериорное распределение | Statistical Inference → A posteriori | событие `posterior_computed`, `log_p[36]` | `t_ns` | после наблюдения | нет (пересчитывается) | NEED-F-04, F-13 | |
 | 11 | Обратная связь в презентацию | Influence on presentation method | события `presentation_feedback`, `presentation_feedback_received` | `t_ns` | после слияния | нет | — | заглушка, MA-16, Q-11 |
 | 12 | Выбранный символ, уверенность, флаги | Primary Symbol Detector | событие `symbol_decided` | `t_ns` | конец эпохи | нет (пересчитывается) | NEED-F-05, F-13 | MA-14, MA-15 |
@@ -209,7 +211,7 @@ runs/
 
 ## 10. Использование при replay
 
-Режим replay (ARCHITECTURE, раздел 6) читает из исходной сессии манифест (репертуар, задание, сид), события `epoch_started` и `physiology_observation`. Всё остальное пересчитывается с новым конфигом и пишется в новую сессию с `replay_of = <исходный session_id>`. Так одну запись физиологии можно прогнать с разными языковыми моделями, способами слияния и правилами коррекции (EXP-01…EXP-07).
+Режим replay ([`ARCHITECTURE.md`](ARCHITECTURE.md), «Режимы без окна оператора») читает из исходной сессии манифест (репертуар, задание, сид), события `epoch_started` и `physiology_observation`. Всё остальное пересчитывается с новым конфигом и пишется в новую сессию с `replay_of = <исходный session_id>`. Так одну запись физиологии можно прогнать с разными языковыми моделями, способами слияния и правилами коррекции (EXP-01…EXP-07).
 
 ## 11. Версионирование схемы
 
@@ -217,9 +219,9 @@ runs/
 - Переименование, удаление поля или изменение его смысла — новая версия `eeg-speller/events@2`, конвертер старых журналов в `scripts/`.
 - Этот документ и `scripts/gen_data_model.py` должны совпадать: тест сверяет каталог событий в коде с таблицами разделов 6 и 7.
 
-## 12. Режим внешних модулей (ветка external-stimulus)
+## 12. Сессии со сменными модулями
 
-Сессии, записанные `eeg_speller.external`, используют ту же схему `eeg-speller/events@1` с такими отличиями:
+Сессии окна оператора (`eeg_speller.external`) используют ту же схему с такими отличиями от симуляции:
 
 | Тип | Блок | Отличие |
 |---|---|---|
@@ -227,9 +229,37 @@ runs/
 | `epoch_started` | One Epoch | рекомендуемые модулю `flash_ms`, `isi_ms`, `n_repetitions` и `stop_confidence`; фактическую стимуляцию определяет модуль |
 | `stimulus_event` | Presentation Method | `symbols`, `indices`, `module`, `onset_lsl_s` — метка LSL момента flip, пересчитанная в часы LSL компьютера спеллера; `timing_method: module_flip_lsl_timestamp` |
 | `physiology_observation` | EEG / EOG source | пишется на **каждое** обновление от декодера; `update` — номер обновления, `module_metrics.final`, `module_metrics.module` |
-| `epoch_stop_requested` (новый) | Presentation Method | `confidence`, `threshold`, `updates`, `flashes`, `elapsed_s` — отправлен сигнал `stop` (MA-34) |
+| `epoch_stop_requested` | Presentation Method | `confidence`, `threshold`, `updates`, `flashes`, `elapsed_s` — отправлен сигнал `stop` (MA-34) |
 | `posterior_computed` | Statistical Inference | `decided_on`: `final_likelihood` \| `stop_grace_elapsed` \| `done_grace_elapsed` \| `timeout` |
 | `presentation_feedback` | Influence on presentation method | `sent: "result"` — модулю отправлен выбранный символ |
 | `warning` | EEG / EOG source | отклонённое сообщение декодера с причиной |
 
-Сырой сигнал ЭЭГ спеллер не получает и не записывает: это делает модуль физиологов или рекордер LSL (например, LabRecorder), записывающий все потоки `Speller*` вместе с ЭЭГ в XDF.
+Сырой сигнал ЭЭГ спеллер не получает и не записывает: это делает ПО усилителя или рекордер LSL (например, LabRecorder), записывающий все потоки `Speller*` вместе с ЭЭГ в XDF.
+
+## 13. Метки времени, сырое правдоподобие, параметры окна оператора
+
+Поля этого раздела дополняют разделы 5–6 (правила версионирования — раздел 11).
+
+**Оболочка события.** В живых сессиях добавлено поле `lsl_s`: время события по часам LSL этого компьютера в секундах, 6 знаков. Это те же часы, в которых приходят отсчёты ЭЭГ (через LSL) и метки вспышек модулей. Поэтому любое событие спеллера можно поставить на одну ось с сигналом. Поле `t_ns` (монотонные часы процесса) осталось как было.
+
+| Тип | Новые поля |
+|---|---|
+| `session_started` | `keyboard` (символы и раскладка), `lsl_clock_at_t0_s` (привязка `t_ns` к LSL), `passport` (что выбрано в окне оператора) |
+| `epoch_started` | `cue_sent` — символ-подсказка, отправленный модулю, или `null` (Q-42) |
+| `stimulus_event` | `recv_lsl_s` — когда метка дошла до спеллера; `unknown_symbols` — символы, которых нет на клавиатуре |
+| `physiology_observation` | `raw` — значения как прислал модуль; `sent_lsl_s` / `recv_lsl_s` — время отправки и прихода по LSL; `transport_delay_ms` |
+| `epoch_timeline` | `lsl_s`: моменты шагов эпохи по LSL; `since_epoch_start_ms`: то же в мс от старта эпохи. Шаги: `prior_ready`, `first_flash`, `last_flash`, `first_likelihood_sent`/`_recv`, `final_likelihood_sent`/`_recv`, `stop_sent`, `done_recv`, `decided`, `result_sent`; также `flashes` и `updates` |
+| `posterior_computed` | `fusion` = имя модуля из `inference/` (`…:fallback`, если модуль упал), `params` — его параметры, `wall_latency_ms` — время слияния |
+| `symbol_decided` | `typed` — символ, который записан в текст (Ё → е, `_` → пробел) |
+| `correction_requested` | `alternatives` — top-K апостериорных букв для каждой буквы окна, если они передаются в БЯМ |
+| `correction_completed` | `messages` — точный запрос к БЯМ; `reply` — ответ как есть; `queued_ms` — ожидание в очереди |
+| `command_issued` (`start_stimulus_program`) | `settings` — параметры модуля, с которыми он запущен |
+
+**Новые файлы в каталоге сессии:**
+- `external/stimulus_settings.json` — параметры модуля с правками оператора;
+- `external/slow_llm_prompt.txt` — промпт медленной БЯМ на эту сессию;
+- `external/module_run/` — рабочая папка модуля стимуляции, там его собственные логи (например `logs/…`);
+- `config.yaml` — также содержит текст промпта (`slow_llm.prompt_text`). Ключи API не пишутся никуда.
+
+**Таблица `tables/epochs`:** добавлены `phys_raw` (последнее обновление как прислано), `phys_updates`, `n_flashes`, `t_epoch_start_lsl` и столбцы `t_<шаг>_ms` из `epoch_timeline`.
+

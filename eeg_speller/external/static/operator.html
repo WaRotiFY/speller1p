@@ -3,99 +3,235 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Спеллер — оператор</title>
+  <title>спеллер — оператор</title>
   <link rel="stylesheet" href="/operator.css">
 </head>
 <body>
-  <header class="bar">
-    <div class="brand">ЭЭГ-спеллер <span>оператор</span></div>
-    <div class="bar-right">
+  <header class="top">
+    <div class="logo"><span class="logo-mark">⌁</span>спеллер<span class="logo-sub">оператор</span></div>
+    <div class="top-right">
       <span id="modules-pill" class="pill off">модули: нет</span>
-      <span id="phase-pill" class="pill">нет сессии</span>
+      <span id="phase-pill" class="pill">настройка</span>
     </div>
   </header>
 
-  <main>
-    <!-- 1. Start -->
-    <section id="start" class="card">
-      <h2>Новая сессия</h2>
+  <!-- ============================== SETUP ============================== -->
+  <main id="setup" class="setup">
+    <section class="block" id="b-session">
+      <h2><span class="num">0</span>сессия</h2>
       <div class="grid">
-        <label>Участник <input id="participant" value="P001" maxlength="32" autocomplete="off"></label>
-        <label>Профиль <select id="profile"></select></label>
-        <label class="wide">Задание
+        <label>участник <input id="participant" value="P001" maxlength="32" autocomplete="off"></label>
+        <label>задание
           <select id="task">
-            <option value="free">Свободный набор</option>
-            <option value="custom">Своя фраза…</option>
+            <option value="free">свободный набор</option>
+            <option value="custom">своя фраза…</option>
           </select>
         </label>
-        <label class="wide hidden" id="custom-row">Фраза <input id="custom" maxlength="200" autocomplete="off"></label>
-        <label class="wide">Программа стимуляции (экран испытуемого)
-          <select id="program"><option value="">— запущу сам —</option></select>
-        </label>
-        <label class="check hidden" id="keyboard-row"><input type="checkbox" id="keyboard" checked> Пробел вместо ЭЭГ</label>
-        <label class="hidden" id="args-row">Доп. аргументы программы <input id="program-args" maxlength="300" autocomplete="off" placeholder="например --fullscreen"></label>
+        <label class="wide hidden" id="custom-row">фраза <input id="custom" maxlength="200" autocomplete="off"></label>
       </div>
-      <p class="hint" id="program-hint">Программа откроется в отдельном окне по кнопке «Начать сессию» и закроется по «Завершить». Свои программы кладите в папку <code>stimulus_kit/modules/</code>.</p>
-      <button id="start-btn" class="primary">Начать сессию</button>
-      <p id="start-error" class="error"></p>
+      <div class="row-opts">
+        <div class="seg" id="llm-mode" data-value="on">
+          <button data-v="on">с БЯМ</button><button data-v="off">без БЯМ</button>
+        </div>
+        <label class="check"><input type="checkbox" id="cue"> показывать испытуемому целевую букву (copy-spelling, калибровка)</label>
+      </div>
     </section>
 
-    <!-- 2. Running -->
-    <section id="run" class="hidden">
-      <div class="card text-card">
-        <div class="label">Набрано</div>
-        <div id="typed" class="typed"></div>
-        <div id="corrected-row" class="sub hidden">исправлено БЯМ: <span id="corrected"></span></div>
-        <div id="target-row" class="sub hidden">задание: <span id="target"></span></div>
+    <section class="block" id="b-phys">
+      <h2><span class="num">1</span>физиология <span class="hint-inline">программа из stimulus_kit/modules — экран испытуемого</span></h2>
+      <div class="grid">
+        <label class="wide">программа стимуляции <select id="program"></select></label>
       </div>
-
-      <div class="row">
-        <div class="card now">
-          <div class="label">Сейчас <span id="epoch-no" class="muted"></span></div>
-          <div class="leader"><span id="leader">—</span><span id="leader-p" class="muted"></span></div>
-          <div class="meter"><div id="meter-fill"></div><div id="meter-stop" title="порог остановки"></div></div>
-          <div class="facts"><span id="flashes"></span><span id="elapsed"></span><span id="stop-badge" class="badge hidden">стоп отправлен</span></div>
-        </div>
-        <div class="card stats">
-          <div class="label">Итоги</div>
-          <dl>
-            <dt>Выбрано</dt><dd id="s-selected">0</dd>
-            <dt>Точность</dt><dd id="s-acc">—</dd>
-            <dt>Досрочных остановок</dt><dd id="s-early">0</dd>
-            <dt>Средняя эпоха</dt><dd id="s-epoch">—</dd>
-            <dt>Скорость</dt><dd id="s-speed">—</dd>
-          </dl>
-        </div>
+      <p id="program-author" class="muted small"></p>
+      <div class="row-opts">
+        <label class="check" id="keyboard-row"><input type="checkbox" id="space-eeg"> пробел вместо ЭЭГ</label>
+        <label class="check" id="windowed-row"><input type="checkbox" id="windowed"> в окне, а не на весь экран</label>
       </div>
-
-      <div class="actions">
-        <button id="pause-btn">Пауза</button>
-        <button id="stop-btn" class="danger">Завершить</button>
-        <button id="new-btn" class="hidden primary">Новая сессия</button>
-        <span id="end-note" class="muted"></span>
-      </div>
-      <div id="program-box" class="card program hidden">
-        <div class="label">Программа стимуляции</div>
-        <div id="program-status"></div>
-        <pre id="program-log" class="hidden"></pre>
-      </div>
-
-      <details class="card more">
-        <summary>Подробнее</summary>
-        <h3>Модули</h3>
-        <ul id="modules" class="plain"></ul>
-        <h3>Кандидаты сейчас</h3>
-        <div id="top" class="chips"></div>
-        <div id="words" class="muted"></div>
-        <h3>Последние эпохи</h3>
-        <table><thead><tr><th>#</th><th>цель</th><th>выбор</th><th>увер.</th><th>вспышек</th><th>сек</th><th>как решено</th></tr></thead>
-          <tbody id="log"></tbody></table>
-        <h3>Коррекции</h3>
-        <ul id="corrections" class="plain"></ul>
-        <p class="muted">Каталог записи: <code id="dir"></code></p>
+      <details id="module-settings-box" class="sub-block">
+        <summary>параметры модуля <span class="muted small">settings.json — правки действуют только на эту сессию</span></summary>
+        <div id="module-settings" class="settings-grid"></div>
+        <button class="link" id="module-reset">вернуть значения из settings.json</button>
       </details>
+      <label class="wide small-label">доп. аргументы программы <input id="program-args" maxlength="300" autocomplete="off" placeholder="например --d-prime 1.5"></label>
     </section>
+
+    <section class="block" id="b-keys">
+      <h2><span class="num">2</span>клавиатура <span class="hint-inline">спеллер присылает её модулю в каждой эпохе</span></h2>
+      <select id="kb-preset"></select>
+      <div id="kb-custom" class="grid hidden">
+        <label class="wide">символы подряд <input id="kb-symbols" maxlength="120" autocomplete="off"></label>
+        <label>строк <input id="kb-rows" type="number" min="1" max="12" value="6"></label>
+        <label>столбцов <input id="kb-cols" type="number" min="1" max="16" value="6"></label>
+      </div>
+      <div id="kb-preview" class="kb-preview"></div>
+    </section>
+
+    <section class="block" id="b-fast">
+      <h2><span class="num">3</span>быстрая БЯМ <span class="hint-inline">подсказка следующей буквы в каждой эпохе</span></h2>
+      <div class="seg" id="fast-backend" data-value="ngram">
+        <button data-v="ngram" title="буквенная 4-грамма из models/ngram">4-грамма</button><button data-v="kenlm" title="словная n-грамма KenLM, по имени на Hugging Face или файлу">KenLM</button><button data-v="hf_causal" title="нейросеть с Hugging Face по имени">HF</button><button data-v="mock_ngram" title="учебная 5-грамма на маленьком корпусе">mock</button>
+      </div>
+      <div id="fast-ngram" class="grid">
+        <label class="wide">модель <select id="ngram-file"></select></label>
+        <p id="ngram-info" class="muted small wide"></p>
+      </div>
+      <div id="fast-kenlm" class="grid hidden">
+        <label class="wide">модель KenLM: имя на huggingface.co или путь к .arpa / .bin <input id="kenlm-id" autocomplete="off"></label>
+        <label>доля буквенной 4-граммы λ <input id="kenlm-mix" type="number" min="0" max="1" step="0.05" value="0.1"></label>
+        <label>слов в словаре <input id="kenlm-vocab" type="number" min="1000" max="500000" step="1000" value="60000"></label>
+        <label class="check wide"><input type="checkbox" id="kenlm-download"> разрешить скачать (≈1,5 ГБ, один раз в models/kenlm)</label>
+        <p id="kenlm-info" class="muted small wide"></p>
+      </div>
+      <div id="fast-hf" class="grid hidden">
+        <label class="wide">имя модели на huggingface.co <input id="hf-model" placeholder="Qwen/Qwen2.5-0.5B" autocomplete="off"></label>
+        <label>устройство <select id="hf-device"><option>cpu</option><option>cuda</option><option>mps</option></select></label>
+        <label class="check"><input type="checkbox" id="hf-download"> разрешить скачать</label>
+        <p class="muted small wide">нужен <code>pip install -e ".[hf]"</code>. модель должна отдавать полное распределение следующего токена — подходят обычные causal LM (Qwen, ruGPT, T-lite…).</p>
+      </div>
+      <div class="row-opts">
+        <span class="muted small">контекст:</span>
+        <div class="seg small" id="fast-context" data-value="primary">
+          <button data-v="primary">набранный текст</button><button data-v="secondary">исправленный</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="b-inf">
+      <h2><span class="num">4</span>статистический вывод <span class="hint-inline">модуль из inference/ — как слить БЯМ и ЭЭГ</span></h2>
+      <select id="inf-plugin"></select>
+      <p id="inf-doc" class="muted small"></p>
+      <div id="inf-params" class="settings-grid"></div>
+      <div class="settings-grid">
+        <label>стоп при уверенности ≥ <input id="stop-conf" type="number" step="0.01" min="0.5" max="1"></label>
+        <label>не раньше, чем после обновлений <input id="stop-min" type="number" step="1" min="0" max="1000"></label>
+        <label>пауза между эпохами, мс <input id="pause-ms" type="number" step="10" min="500" max="5000"></label>
+        <label class="check"><input type="checkbox" id="stop-off"> не останавливать досрочно</label>
+      </div>
+    </section>
+
+    <section class="block" id="b-slow">
+      <h2><span class="num">5</span>медленная БЯМ <span class="hint-inline">исправление набранных слов</span></h2>
+      <div class="seg" id="slow-backend" data-value="mock_dictionary">
+        <button data-v="off">выкл.</button><button data-v="mock_dictionary">словарь</button><button data-v="chat_api">БЯМ по API</button>
+      </div>
+      <div id="slow-api" class="hidden">
+        <div class="grid">
+          <label>провайдер <select id="provider"></select></label>
+          <label class="hidden" id="base-url-row">адрес API <input id="base-url" placeholder="http://127.0.0.1:8080/v1" autocomplete="off"></label>
+          <label id="key-row">ключ API <span class="key-line"><input id="api-key" type="password" autocomplete="off" placeholder="вставьте ключ"><button id="key-save" class="small-btn">сохранить</button></span></label>
+        </div>
+        <p id="provider-help" class="muted small"></p>
+        <div class="grid">
+          <label class="wide">модель
+            <span class="key-line"><input id="slow-model" list="slow-models" autocomplete="off"><button id="models-refresh" class="small-btn">список</button></span>
+            <datalist id="slow-models"></datalist>
+          </label>
+        </div>
+        <p id="models-info" class="muted small"></p>
+        <label class="check warn" id="remote-row"><input type="checkbox" id="allow-remote"> разрешить отправку набранного текста в облако (третьей стороне)</label>
+      </div>
+      <div class="settings-grid">
+        <label>исправлять каждые N слов <input id="every-n" type="number" min="1" max="20" value="1"></label>
+        <label>окно: последние W слов <input id="window-w" type="number" min="1" max="20" value="3"></label>
+        <label class="check"><input type="checkbox" id="alts" checked> передавать варианты букв (апостериорные)</label>
+        <label>вариантов на букву <input id="alts-k" type="number" min="1" max="10" value="4"></label>
+      </div>
+      <button id="prompt-open" class="link">промпт медленной БЯМ <span id="prompt-edited" class="muted small"></span></button>
+    </section>
+
+    <div class="start-row">
+      <button id="start-btn" class="start">начать сессию</button>
+      <span id="start-note" class="muted small"></span>
+    </div>
+    <p id="start-error" class="error"></p>
   </main>
+
+  <!-- ============================== RUN ============================== -->
+  <main id="run" class="run hidden">
+    <div id="passport" class="passport"></div>
+
+    <div class="words-wrap">
+      <div id="typed" class="typed"></div>
+      <div id="corrected-row" class="corrected hidden"><span class="muted">исправлено:</span> <span id="corrected"></span></div>
+      <div id="cands" class="cands"></div>
+    </div>
+
+    <div class="stage">
+      <div class="quads">
+        <div class="quad-box">
+          <div class="quad-title">после БЯМ <span class="muted">ээг + бям</span></div>
+          <div id="quad-post" class="quad"></div>
+        </div>
+        <div class="quad-box">
+          <div class="quad-title">до БЯМ <span class="muted">только ээг</span></div>
+          <div id="quad-lik" class="quad"></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="info">
+        <div class="meter-row">
+          <div class="meter"><div id="meter-fill"></div><div id="meter-stop" title="порог досрочной остановки"></div></div>
+          <span id="meter-label" class="muted"></span>
+        </div>
+        <dl class="facts">
+          <dt>эпоха</dt><dd id="f-epoch">—</dd>
+          <dt>стимулов</dt><dd id="f-flashes">—</dd>
+          <dt>обновлений ЭЭГ</dt><dd id="f-updates">—</dd>
+          <dt>время эпохи</dt><dd id="f-elapsed">—</dd>
+          <dt>точность</dt><dd id="s-acc">—</dd>
+          <dt>скорость</dt><dd id="s-speed">—</dd>
+          <dt>досрочных стопов</dt><dd id="s-early">—</dd>
+          <dt>средняя эпоха</dt><dd id="s-epoch">—</dd>
+        </dl>
+        <div class="prior-line"><span class="muted">бям:</span> <span id="prior-top"></span></div>
+        <div id="program-status" class="muted small"></div>
+      </div>
+    </div>
+
+    <div class="history" id="history">
+      <div class="history-head"><span>история правок</span><button id="history-toggle" class="link small">показать всё</button></div>
+      <div id="history-list" class="history-list"></div>
+    </div>
+
+    <div class="actions">
+      <button id="pause-btn" class="ghost">пауза</button>
+      <button id="stop-btn" class="ghost danger">завершить</button>
+      <button id="new-btn" class="start hidden">новая сессия</button>
+      <span id="end-note" class="muted small"></span>
+    </div>
+
+    <details class="more">
+      <summary>подробнее</summary>
+      <h3>модули</h3>
+      <ul id="modules" class="plain"></ul>
+      <h3>последние эпохи</h3>
+      <table><thead><tr><th>#</th><th>цель</th><th>выбор</th><th>увер.</th><th>стимулов</th><th>сек</th><th>как решено</th></tr></thead>
+        <tbody id="log"></tbody></table>
+      <h3>программа стимуляции</h3>
+      <pre id="program-log" class="log-tail"></pre>
+      <p class="muted small">каталог записи: <code id="dir"></code></p>
+    </details>
+  </main>
+
+  <!-- ============================== PROMPT ============================== -->
+  <div id="prompt-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h2 id="prompt-title">промпт медленной БЯМ</h2>
+        <button id="prompt-close" class="link">закрыть</button>
+      </div>
+      <p class="muted small">выше строки <code>---- сообщение ----</code> — системная часть, ниже — шаблон сообщения. поля: <code>{context}</code> контекст слева, <code>{n}</code> число слов, <code>{words}</code> слова окна, <code>{alternatives}</code> варианты букв.</p>
+      <div class="modal-cols">
+        <textarea id="prompt-text" spellcheck="false"></textarea>
+        <div class="preview"><div class="muted small">так уйдёт в БЯМ (пример):</div><div id="prompt-preview"></div></div>
+      </div>
+      <p id="prompt-error" class="error"></p>
+      <div class="modal-actions">
+        <button id="prompt-save" class="start">сохранить</button>
+        <button id="prompt-reset" class="ghost">вернуть стандартный</button>
+      </div>
+    </div>
+  </div>
   <script src="/operator.js"></script>
 </body>
 </html>

@@ -1,9 +1,9 @@
-"""Deterministic presentation plans shared by the UI and recording generator."""
+"""Deterministic row/column flash plans for the synthetic EDF recordings."""
 import random
 
 
 def make_plan(cfg, epoch_id: int) -> list[dict]:
-    rng = random.Random(cfg.child_seed("gui_flashes") + epoch_id)
+    rng = random.Random(cfg.child_seed("flash_plan") + epoch_id)
     rows, cols = cfg.repertoire["layout"]
     n = len(cfg.repertoire["symbols"])
     if cfg.stimulus["paradigm"] == "row_column":

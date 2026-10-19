@@ -1,0 +1,24 @@
+# P300 decoder example (stimulus_kit/decoders/p300_lsl_decoder.py) and the synthetic EDF demo
+# (python -m eeg_speller.physiology.edf_demo). The physiology block describes the EEG:
+# channels, filters, the calibrated model and the LSL stream. The demo model fits synthetic
+# signals only: calibrate on your own amplifier before real sessions (docs/DECODER.md).
+inherits: ext_default.yaml
+stimulus: {paradigm: row_column, flash_ms: 100, isi_ms: 400, pause_ms: 500}
+epoch: {n_repetitions: 2}
+physiology:
+  plugin: p300
+  channels: [Cz, Pz, P3, P4]
+  baseline_s: [-0.2, 0.0]
+  response_s: [0.25, 0.5]
+  window_s: [-0.2, 0.8]
+  bandpass_hz: [0.5, 15.0]
+  artifact_uv: 150.0
+  model_path: runs/edf_demo/p300_model.json
+  data_timeout_s: 5
+  source:
+    kind: lsl
+    stream_field: source_id
+    stream_value: speller-synthetic-eeg
+    units: uV
+    connect_timeout_s: 5
+    channel_aliases: {}

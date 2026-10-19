@@ -83,7 +83,7 @@ def calibrate(cfg, edf_path, labels, output):
 
 def main():
     parser = argparse.ArgumentParser(description="Synthetic EEG fixture; arbitrary text is encoded in P300 waveforms")
-    parser.add_argument("--profile", type=Path, default=Path("configs/gui_edf.yaml"))
+    parser.add_argument("--profile", type=Path, default=Path("configs/p300_decoder.yaml"))
     parser.add_argument("--text", required=True, help="text to encode in the independent test waveform")
     parser.add_argument("--output-dir", type=Path, default=Path("runs/edf_demo"))
     parser.add_argument("--seed", type=int, default=19753, help="test signal seed; calibration uses another seed")
@@ -97,7 +97,7 @@ def main():
     generate_edf(cfg, text, directory / "test.edf", signal_seed=args.seed)
     (directory / "expected_test_only.json").write_text(json.dumps({"text": text, "signal_seed": args.seed}, ensure_ascii=False), encoding="utf-8")
     print(f"Generated {directory / 'test.edf'} (8 channels at 256 Hz) and calibrated P300 model.")
-    print("Select gui_edf.yaml in the operator window; choose Free typing. No keyboard responses needed.")
+    print("Play it into LSL: python stimulus_kit/tools/edf_to_lsl.py " + str(directory / "test.edf"))
 
 
 if __name__ == "__main__":

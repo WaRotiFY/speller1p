@@ -4,18 +4,17 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eeg-speller"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.24", "pydantic>=2,<3", "PyYAML>=6", "scipy>=1.11"]
 
 [project.optional-dependencies]
 test = ["pytest>=8", "pyedflib>=0.1.40,<0.2"]
 hf = ["transformers", "torch"]
-remote = ["httpx"]
 parquet = ["pyarrow"]
 eeg = ["pyedflib>=0.1.40,<0.2"]
-lsl = ["pylsl>=1.17,<2"]
 external = ["pylsl>=1.17,<2", "pygame>=2.5"]
+kenlm = ["kenlm"]
 
 [tool.setuptools.packages.find]
 include = ["eeg_speller*"]

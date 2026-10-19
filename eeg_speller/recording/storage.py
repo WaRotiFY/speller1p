@@ -74,7 +74,14 @@ def build_tables(session_dir):
                 row["t_start_ns"] = event["t_ns"]
             elif typ == "physiology_observation":
                 row["phys_log_p"] = payload["log_p"]
-                row["binary_flash_accuracy"] = payload.get("module_metrics", {}).get("binary_flash_accuracy")
+                row["binary_flash_accuracy"] = (payload.get("module_metrics") or {}).get("binary_flash_accuracy")
+                if "raw" in payload:                 # last update as the module sent it
+                    row["phys_raw"] = payload["raw"]
+                    row["phys_updates"] = payload.get("update")
+            elif typ == "epoch_timeline":
+                row["t_epoch_start_lsl"] = payload["lsl_s"].get("epoch_start_lsl")
+                row.update({f"t_{k}": v for k, v in payload["since_epoch_start_ms"].items()})
+                row["n_flashes"] = payload.get("flashes")
             elif typ == "prior_computed":
                 row["prior_log_p"] = payload["log_p"]
                 row["prior_latency_ms"] = payload.get("wall_latency_ms")

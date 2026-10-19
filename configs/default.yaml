@@ -25,8 +25,11 @@ fast_llm:
   context_source: primary
   char_marginal: {depth: 2, beam: 64, backspace_prob: 0.02}
   mock: {order: 5, discount: 0.75}
+  model_file: ru_char4.npz
+  allow_download: false
+  other_prob: 0.005
 word_prediction: {n_max: 10, min_prefix: 0}
-fusion: {strategy: log_pool, alpha: 1.0, beta: 1.0, lambda: 0.5}
+fusion: {strategy: log_pool, plugin: log_pool, params: {}, alpha: 1.0, beta: 1.0, lambda: 0.5}
 detector: {mode: label, tau: 0.5, max_retries: 1, cold_start_symbols: 5}
 presentation_feedback: {k_max: 5, mass: 0.9, send_posterior: false}
 slow_llm:
@@ -35,12 +38,13 @@ slow_llm:
   prompt_file: prompts/correction.txt
   temperature: 0
   include_alternatives: false
+  alternatives_k: 4
   trigger: word_end
+  every_n_words: 1
   window_words: 3
   min_context_words: 1
   strict_word_count: true
-  base_url: http://127.0.0.1:11434/v1
-  prompt_file_local: prompts/correction_local.txt
+  provider: ollama
   timeout_s: 30
   mock: {max_edit: 2, same_row_col_cost: 0.5}
 rl: {enabled: true, mode: broadcast_only, min_labels: 100}
