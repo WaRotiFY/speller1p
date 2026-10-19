@@ -29,7 +29,7 @@ class HFCausal:
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
         except ImportError as exc:
-            raise ValueError('Hugging Face models need: pip install -e ".[hf]" (transformers, torch)') from exc
+            raise ValueError('не установлены пакеты transformers и torch: uv pip install -e ".[hf]"') from exc
         self.torch = torch
         self.cfg = cfg
         self.model_id = str(cfg["model_id"]).strip()

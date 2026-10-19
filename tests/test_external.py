@@ -217,6 +217,7 @@ def test_programs_in_modules_folder_are_offered_and_launched(tmp_path):
     folder.mkdir(exist_ok=True)
     demo = folder / "pytest_demo_tmp.py"
     demo.write_text('"""Тестовая демонстрация."""\nimport sys\nfrom speller_link import SpellerLink\n'
+                    'ARGS = ["--text"]\nprint("pygame 2.6.1 (SDL 2.28.4, Python 3.13.0)")\n'
                     'print("args", sys.argv[1:])\n', encoding="utf-8")
     helper = folder / "not_a_module_tmp.py"
     helper.write_text("print('no link here')\n", encoding="utf-8")
@@ -224,10 +225,8 @@ def test_programs_in_modules_folder_are_offered_and_launched(tmp_path):
         found = {p["id"]: p for p in launcher.stimulus_programs()}
         assert found["modules/pytest_demo_tmp.py"]["label"] == "Тестовая демонстрация"
         assert "modules/not_a_module_tmp.py" not in found
-        assert found["examples/pygame_matrix.py"]["keyboard"]
-        assert launcher.build_args(found["examples/pygame_matrix.py"], True, "--fullscreen", "") == \
-            ["--keyboard", "--fullscreen"]
-        assert launcher.build_args(found["examples/headless_sim.py"], True, "", "мир") == ["--text", "мир"]
+        assert launcher.build_args(found["modules/pytest_demo_tmp.py"], "мир") == ["--text", "мир"]
+        assert launcher.build_args(found["modules/flash_rows_cols"], "мир") == []
         proc = launcher.StimulusProcess("modules/pytest_demo_tmp.py", ["--x"], tmp_path / "stimulus.log")
         proc.proc.wait(timeout=30)
         status = proc.status()

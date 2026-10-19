@@ -150,8 +150,8 @@ class KenLMWords:
         try:
             import kenlm
         except ImportError as exc:
-            raise ValueError("word KenLM needs the kenlm package: pip install -e \".[kenlm]\" "
-                             "(see models/kenlm/README.md for Windows)") from exc
+            raise ValueError('не установлен пакет kenlm: uv pip install -e ".[kenlm]" '
+                             "(сборка на Windows и Python 3.13 — models/kenlm/README.md)") from exc
         self.kenlm = kenlm
         self.cfg = cfg
         model_id = str(cfg.get("model_id") or DEFAULT_REPO).strip()

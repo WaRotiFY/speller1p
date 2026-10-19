@@ -3,14 +3,14 @@
 Каждая буква в случайный момент (задержка t1) сдвигается и возвращается (длительность t0).
 Места, где модуль общается со спеллером, помечены комментарием «SPELLER-LINK»:
 
-1. буквы и раскладку присылает спеллер (epoch.symbols, epoch.layout);
+1. клавиатура задаётся в settings.json (alphabet, num_rows, num_cols) и сообщается спеллеру;
 2. эпохи идут по команде спеллера (link.wait_epoch);
 3. эпоха стартует сама (или по пробелу, если включён start_by_space);
 4. сразу после flip кадра, в котором буква начала движение, вызывается link.flash([буква]);
 5. эпоха заканчивается, когда КАЖДАЯ буква сделала num_samples движений (цель модулю
    неизвестна) или когда спеллер прислал stop;
 6. после эпохи показывается выбранная буква (link.wait_result);
-7. подсказка (целевая буква) показывается, только если спеллер прислал epoch.cue.
+7. подсказка (целевая буква) берётся из sentence в settings.json, если он задан.
 """
 import math
 import os
@@ -21,7 +21,7 @@ import json
 import numpy as np
 import pygame
 
-from module_tools import AsyncKeyboardDecoder, color, log_path, place_window
+from module_tools import AsyncKeyboardDecoder, color, cue_for, log_path, place_window
 
 
 class Experiment:
@@ -210,7 +210,7 @@ class Experiment:
 
     def perform(self, epoch):
 
-        cue = epoch.cue
+        cue = cue_for(self.data_config, epoch.text, epoch.symbols)   # IMPROV[Q-42]
         self.f.write(f'epoch {epoch.id} cue {cue}\n')
 
         # rest before the epoch, then the cue (only in copy-spelling / calibration sessions)

@@ -17,6 +17,8 @@ import pygame  # noqa: E402
 from speller_link import SpellerLink, now  # noqa: E402
 from keyboard_decoder import KeyboardDecoder  # noqa: E402
 
+KEYBOARD = list("абвгдежзийклмнопрстуфхцчшщъыьэюя_.,⌫")     # the module owns its keyboard ("_" is a space)
+
 BG, FG, DIM, ACCENT = (8, 8, 12), (255, 255, 255), (110, 110, 120), (120, 220, 140)
 
 
@@ -35,7 +37,8 @@ def main():
     pygame.display.set_caption("Speller — RSVP")
     huge = pygame.font.SysFont("dejavusans,arial", 240)
     small = pygame.font.SysFont("dejavusans,arial", 30)
-    link = SpellerLink(name="pygame_rsvp", role="stimulus+decoder" if args.keyboard else "stimulus")
+    link = SpellerLink(name="pygame_rsvp", role="stimulus+decoder" if args.keyboard else "stimulus",
+                       keyboard=KEYBOARD, layout=(6, 6))
 
     while True:
         epoch = link.wait_epoch(timeout=0.2)

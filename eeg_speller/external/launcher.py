@@ -1,21 +1,18 @@
-"""Find stimulus programs in folders and start the chosen one as a separate process.
+"""Find stimulus modules in stimulus_kit/modules and start the chosen one as a separate process.
 
-Two kinds of programs are offered in the operator window:
-
-- a single ``*.py`` file that uses ``SpellerLink`` (``stimulus_kit/examples``, ``stimulus_kit/modules``);
-- a folder in ``stimulus_kit/modules`` with ``main.py`` that uses ``SpellerLink``, an optional
-  ``settings.json`` (shown in the operator window and editable before the start) and an
-  optional ``module.json`` with ``label`` and ``help`` (one hint per setting).
-
-The edited settings are saved into the session folder and passed as ``--settings <file>``.
-The program runs in the session folder, so its own logs end up in the recording.
-The speller still knows nothing about what the program draws: it only starts and stops it.
+A module is a ``*.py`` file or a folder with ``main.py`` that uses ``SpellerLink``; an
+optional ``module.json`` gives its ``label`` and ``description``. The operator only picks
+the module: all its parameters (keyboard, timing, test mode, screen) live in the module's
+own ``settings.json`` and are edited by the module's authors. The module runs in the
+session folder, so its own logs end up in the recording. The speller knows nothing about
+what the module draws: it only starts and stops it.
 """
 from __future__ import annotations
 
 import ast
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import subprocess
@@ -26,7 +23,9 @@ import time
 PROJECT = Path(__file__).resolve().parents[2]
 KIT = PROJECT / "stimulus_kit"
 # User folder first: physiologists drop their programs into stimulus_kit/modules/.
-STIMULUS_DIRS = {"modules": KIT / "modules", "examples": KIT / "examples"}
+STIMULUS_DIRS = {"modules": KIT / "modules"}
+# Lines of library chatter that are not useful in the operator window.
+NOISE = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+ \(.*\)\s+\[.*\]|pygame \d|Hello from the pygame)")
 
 
 def _first_doc_line(source: str, fallback: str) -> str:
@@ -47,12 +46,12 @@ def _describe_file(path: Path) -> dict | None:
         return None
     if "SpellerLink" not in source or path.name.startswith("_"):
         return None
-    return {"label": _first_doc_line(source, path.stem), "keyboard": "--keyboard" in source,
-            "needs_text": '"--text"' in source, "settings": None, "help": {}, "description": None,
-            "windowed": "--windowed" in source}
+    return {"label": _first_doc_line(source, path.stem), "needs_text": '"--text"' in source,
+            "settings": None, "description": None}
 
 
 def _describe_folder(folder: Path) -> dict | None:
+    # IMPROV[Q-44]
     main = folder / "main.py"
     if not main.is_file() or folder.name.startswith(("_", ".")):
         return None
@@ -74,16 +73,12 @@ def _describe_folder(folder: Path) -> dict | None:
             settings = json.loads((folder / "settings.json").read_text(encoding="utf-8"))
         except ValueError:
             settings = None
-    tools = (KIT / "module_tools.py").read_text(encoding="utf-8") if "module_args" in sources else ""
-    flags = sources + tools
     return {"label": meta.get("label") or _first_doc_line(main.read_text(encoding="utf-8"), folder.name),
-            "keyboard": "--keyboard" in flags, "needs_text": '"--text"' in sources,
-            "windowed": "--windowed" in flags, "settings": settings,
-            "help": meta.get("help") or {}, "description": meta.get("description")}
+            "needs_text": '"--text"' in sources, "settings": settings, "description": meta.get("description")}
 
 
 def stimulus_programs() -> list[dict]:
-    """All programs the operator can choose, as {id, label, folder, keyboard, needs_text, settings, help}."""
+    """All modules the operator can choose, as {id, label, folder, needs_text, settings, description}."""
     out = []
     for folder, directory in STIMULUS_DIRS.items():
         if not directory.is_dir():
@@ -104,33 +99,6 @@ def resolve(program_id: str) -> Path:
             path = STIMULUS_DIRS[folder] / name
             return path / "main.py" if path.is_dir() else path
     raise ValueError("unknown stimulus program")
-
-
-def merge_settings(defaults: dict | None, edited: dict | None) -> dict | None:
-    """Operator edits on top of settings.json; only known keys, same JSON types."""
-    # IMPROV[Q-44]
-    if defaults is None:
-        return None
-    out = dict(defaults)
-    for key, value in (edited or {}).items():
-        if key not in defaults or key.startswith("_"):
-            raise ValueError(f"unknown module setting: {key}")
-        base = defaults[key]
-        if isinstance(base, bool):
-            if not isinstance(value, bool):
-                raise ValueError(f"{key}: true or false")
-        elif isinstance(base, (int, float)):
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ValueError(f"{key}: a number")
-            value = int(value) if isinstance(base, int) and float(value).is_integer() else value
-        elif isinstance(base, list):
-            if not isinstance(value, list) or len(value) != len(base):
-                raise ValueError(f"{key}: a list of {len(base)} values")
-        elif isinstance(base, str):
-            if not isinstance(value, str) or len(value) > 200:
-                raise ValueError(f"{key}: text up to 200 characters")
-        out[key] = value
-    return out
 
 
 class StimulusProcess:
@@ -166,7 +134,7 @@ class StimulusProcess:
             text = self.log_path.read_text(encoding="utf-8", errors="replace")
         except (OSError, ValueError):
             return []
-        return [line for line in text.splitlines() if line.strip()][-lines:]
+        return [line for line in text.splitlines() if line.strip() and not NOISE.match(line)][-lines:]
 
     def stop(self, grace_s: float = 3.0) -> None:
         """Let the program exit on the speller's "end" message, then terminate it."""
@@ -184,17 +152,6 @@ class StimulusProcess:
         threading.Thread(target=_stop, daemon=True).start()
 
 
-def build_args(info: dict, keyboard: bool, extra: str, target: str, settings_file: Path | None = None,
-               windowed: bool = False) -> list[str]:
-    args = []
-    if settings_file is not None:
-        args += ["--settings", str(settings_file)]
-    if keyboard and info.get("keyboard"):
-        args.append("--keyboard")
-    if windowed and info.get("windowed"):
-        args.append("--windowed")
-    if info.get("needs_text") and "--text" not in extra:
-        args += ["--text", target or "привет"]
-    if extra.strip():
-        args += shlex.split(extra, posix=os.name != "nt")
-    return args
+def build_args(info: dict, target: str) -> list[str]:
+    """Modules take everything from their settings.json; only the simple examples need the phrase."""
+    return ["--text", target or "привет"] if info.get("needs_text") else []

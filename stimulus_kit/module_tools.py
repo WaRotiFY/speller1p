@@ -1,7 +1,9 @@
 """Small helpers for stimulus modules (optional; only speller_link.py is required).
 
-- ``load_settings``: read ``settings.json`` of a module, or the file passed by the
-  operator window with ``--settings``;
+- ``module_args``: command line and ``settings.json`` of the module in one object;
+- ``keyboard_of``: keyboard from the settings (``alphabet``, ``num_rows``, ``num_cols``);
+- ``cue_for``: target letter to show before an epoch (``sentence`` in the settings);
+- ``load_settings``: read a ``settings.json``;
 - ``color``: "#rrggbb", [r, g, b] or a grey level 0..255 -> (r, g, b);
 - ``AsyncKeyboardDecoder``: "space bar instead of EEG" for paradigms where stimuli
   overlap in time (moving letters, circles). A press counts for every stimulus whose
@@ -17,12 +19,45 @@ import sys
 
 
 def module_args(description: str, default_settings: str):
-    """Common command line of a module: --settings, --keyboard, --windowed."""
+    """Command line and settings of a module.
+
+    Everything is set in the module's ``settings.json``; the flags only override it when
+    the module is started by hand. Returns args with ``config`` (the settings), ``keyboard``
+    (space bar instead of EEG) and ``windowed``.
+    """
     ap = argparse.ArgumentParser(description=description)
     ap.add_argument("--settings", default=default_settings, help="settings.json of this module")
     ap.add_argument("--keyboard", action="store_true", help="SPACE instead of EEG (for trying the paradigm)")
     ap.add_argument("--windowed", action="store_true", help="window instead of full screen")
-    return ap.parse_args()
+    args = ap.parse_args()
+    args.config = load_settings(os.path.abspath(args.settings))
+    args.keyboard = args.keyboard or bool(args.config.get("space_instead_of_eeg", False))
+    args.windowed = args.windowed or not bool(args.config.get("fullscreen", True))
+    return args
+
+
+def keyboard_of(cfg: dict):
+    """(symbols, (rows, columns)) from ``alphabet``, ``num_rows``, ``num_cols``; ``_`` is a space."""
+    symbols = list(str(cfg["alphabet"]).replace("\n", ""))
+    return symbols, (int(cfg["num_rows"]), int(cfg["num_cols"]))
+
+
+def cue_for(cfg: dict, typed_text: str, symbols) -> str | None:
+    """Target symbol to show before the epoch, from ``sentence`` (copy-spelling, calibration).
+
+    The n-th epoch of the session shows the n-th character of the sentence (by the length
+    of the typed text). Empty ``sentence``: no cue. Case and ``_``/space are matched to
+    the keyboard.
+    """
+    sentence = str(cfg.get("sentence") or "")
+    i = len(typed_text)
+    if not sentence or i >= len(sentence):
+        return None
+    ch = sentence[i]
+    for s in symbols:
+        if s == ch or s.lower() == ch.lower() or (s == "_" and ch == " ") or (s == " " and ch == "_"):
+            return s
+    return None
 
 
 def load_settings(path: str) -> dict:

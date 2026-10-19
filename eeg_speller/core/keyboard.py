@@ -61,7 +61,7 @@ def validate_keyboard(symbols, layout) -> None:
 
 
 def symbol_for_char(ch: str, symbols) -> str | None:
-    """Keyboard symbol that types ``ch`` (used for the cue in copy-spelling)."""
+    """Keyboard symbol that types ``ch``."""
     for s in symbols:
         if typed_char(s) == ch:
             return s

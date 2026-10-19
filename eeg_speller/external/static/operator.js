@@ -2,6 +2,8 @@
 const $ = (id) => document.getElementById(id);
 const PHASES = { waiting_modules: "ждём модуль", presenting: "эпоха", result: "результат", finished: "завершено" };
 const STORE = "speller.operator.v2";
+const DECIDED = { final_likelihood: "оценка final", stop_grace_elapsed: "после стопа", done_grace_elapsed: "после done",
+  timeout: "по таймауту", no_likelihood: "нет ЭЭГ — повтор" };
 let init = null, version = -1, current = null, dismissed = null, saved = {}, promptTimer = null;
 
 async function api(path, body) {
@@ -39,24 +41,13 @@ async function boot() {
   for (const t of init.tasks) $("task").add(new Option(`${t.id} — ${t.text}`, t.id));
   $("task").onchange = () => $("custom-row").classList.toggle("hidden", $("task").value !== "custom");
 
-  // physiology
-  const groups = { modules: "модули стимуляции (stimulus_kit/modules)", examples: "примеры (stimulus_kit/examples)" };
-  for (const folder of Object.keys(groups)) {
-    const items = init.programs.filter((p) => p.folder === folder);
-    if (!items.length) continue;
-    const og = document.createElement("optgroup");
-    og.label = groups[folder];
-    for (const p of items) og.appendChild(new Option(p.label, p.id));
-    $("program").appendChild(og);
-  }
-  $("program").add(new Option("— не запускать (модуль запущу сам)", ""));
-  $("program").onchange = () => programChanged(true);
-  $("module-reset").onclick = () => { delete (saved.moduleSettings || {})[$("program").value]; programChanged(false); };
+  // theme
+  $("theme-btn").onclick = () => setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light", true);
 
-  // keyboard
-  for (const [k, v] of Object.entries(init.keyboards)) $("kb-preset").add(new Option(v.label, k));
-  $("kb-preset").add(new Option("своя клавиатура…", "custom"));
-  for (const id of ["kb-preset", "kb-symbols", "kb-rows", "kb-cols"]) $(id).oninput = keyboardChanged;
+  // physiology
+  for (const p of init.programs) $("program").add(new Option(p.label, p.id));
+  $("program").add(new Option("— не запускать (модуль запущу сам)", ""));
+  $("program").onchange = programChanged;
 
   // fast LLM
   sLlm = seg("llm-mode", (v) => { for (const b of ["b-fast", "b-slow"]) $(b).style.opacity = v === "off" ? .45 : 1; });
@@ -67,7 +58,6 @@ async function boot() {
   });
   sCtx = seg("fast-context");
   for (const m of init.fast_models) $("ngram-file").add(new Option(m.file, m.file));
-  $("ngram-file").onchange = ngramInfo;
 
   // inference
   for (const p of init.inference) $("inf-plugin").add(new Option(p.error ? `${p.id} (ошибка)` : `${p.label} — ${p.id}.py`, p.id));
@@ -94,6 +84,7 @@ async function boot() {
   $("history-toggle").onclick = () => {
     const open = $("history").classList.toggle("open");
     txt($("history-toggle"), open ? "свернуть" : "показать всё");
+    if (current) renderHistory(current);
   };
   restore();
   poll();
@@ -106,32 +97,16 @@ function restore() {
   if (s.custom) $("custom").value = s.custom;
   $("task").onchange();
   sLlm.set(s.llm || "on");
-  $("cue").checked = !!s.cue;
   const prog = init.programs.find((p) => p.id === s.program) ||
     init.programs.find((p) => p.id === "modules/flash_rows_cols") || init.programs[0];
   $("program").value = s.program === "" ? "" : (prog ? prog.id : "");
-  $("space-eeg").checked = !!s.spaceEeg;
-  $("windowed").checked = !!s.windowed;
-  $("program-args").value = s.args || "";
-  programChanged(false);
-  $("kb-preset").value = s.kbPreset || "abc_6x6";
-  $("kb-symbols").value = s.kbSymbols || "";
-  $("kb-rows").value = s.kbRows || 6;
-  $("kb-cols").value = s.kbCols || 6;
-  keyboardChanged();
+  programChanged();
   const kenlmReady = init.kenlm.available && init.kenlm.downloaded.length > 0;
   sFast.set(s.fastBackend || (kenlmReady ? "kenlm" : "ngram"));
   if (s.ngramFile && init.fast_models.some((m) => m.file === s.ngramFile)) $("ngram-file").value = s.ngramFile;
-  ngramInfo();
   $("hf-model").value = s.hfModel || "";
   $("kenlm-id").value = s.kenlmId || init.kenlm.default;
-  $("kenlm-mix").value = s.kenlmMix ?? 0.1;
-  $("kenlm-vocab").value = s.kenlmVocab ?? 60000;
   $("kenlm-download").checked = !!s.kenlmDownload;
-  const kd = init.kenlm.downloaded.map((m) => m.id);
-  txt($("kenlm-info"), (init.kenlm.available ? "" : "пакет kenlm не установлен: pip install -e \".[kenlm]\" (см. models/kenlm/README.md). ") +
-    (kd.length ? `скачаны: ${kd.join(", ")}` : "моделей ещё не скачано") +
-    ". словная модель даёт следующую букву через сумму вероятностей слов, продолжающих начатое слово; λ — доля буквенной 4-граммы на случай опечаток и редких слов.");
   $("hf-download").checked = !!s.hfDownload;
   $("hf-device").value = s.hfDevice || "cpu";
   sCtx.set(s.context || "primary");
@@ -146,7 +121,6 @@ function restore() {
   $("provider").value = s.provider || "ollama";
   $("base-url").value = s.baseUrl || "";
   providerChanged(false);
-  $("allow-remote").checked = !!s.allowRemote;
   $("every-n").value = s.everyN ?? d.every_n_words;
   $("window-w").value = s.windowW ?? d.window_words;
   $("alts").checked = s.alts ?? true;
@@ -157,110 +131,31 @@ function restore() {
 function collectSaved() {
   saved = {
     ...saved, participant: $("participant").value.trim(), task: $("task").value, custom: $("custom").value,
-    llm: sLlm.get(), cue: $("cue").checked, program: $("program").value, spaceEeg: $("space-eeg").checked,
-    windowed: $("windowed").checked, args: $("program-args").value, kbPreset: $("kb-preset").value,
-    kbSymbols: $("kb-symbols").value, kbRows: +$("kb-rows").value, kbCols: +$("kb-cols").value,
+    llm: sLlm.get(), program: $("program").value,
     fastBackend: sFast.get(), ngramFile: $("ngram-file").value, hfModel: $("hf-model").value.trim(),
     hfDownload: $("hf-download").checked, hfDevice: $("hf-device").value, context: sCtx.get(),
-    kenlmId: $("kenlm-id").value.trim(), kenlmMix: +$("kenlm-mix").value, kenlmVocab: +$("kenlm-vocab").value,
-    kenlmDownload: $("kenlm-download").checked,
+    kenlmId: $("kenlm-id").value.trim(), kenlmDownload: $("kenlm-download").checked,
     plugin: $("inf-plugin").value, stopConf: +$("stop-conf").value, stopMin: +$("stop-min").value,
     pauseMs: +$("pause-ms").value, stopOff: $("stop-off").checked, slowBackend: sSlow.get(),
     provider: $("provider").value, baseUrl: $("base-url").value.trim(), slowModel: $("slow-model").value.trim(),
-    allowRemote: $("allow-remote").checked, everyN: +$("every-n").value, windowW: +$("window-w").value,
+    everyN: +$("every-n").value, windowW: +$("window-w").value,
     alts: $("alts").checked, altsK: +$("alts-k").value,
   };
-  saved.moduleSettings = { ...(saved.moduleSettings || {}), [$("program").value]: moduleSettingsValues() };
   saved.pluginParams = { ...(saved.pluginParams || {}), [$("inf-plugin").value]: pluginParamValues() };
   saved.slowModels = { ...(saved.slowModels || {}), [$("provider").value]: $("slow-model").value.trim() };
   store(saved);
 }
 
-/* physiology module settings form (generated from settings.json) */
-function programChanged(fromUser) {
+/* physiology: the module owns its settings and keyboard */
+function programChanged() {
   const p = init.programs.find((x) => x.id === $("program").value);
-  $("keyboard-row").classList.toggle("hidden", !(p && p.keyboard));
-  $("windowed-row").classList.toggle("hidden", !(p && p.windowed));
-  txt($("program-author"), p ? [p.description, p.id].filter(Boolean).join(" · ") : "модуль стимуляции запускается вручную");
-  const box = $("module-settings");
-  box.textContent = "";
-  $("module-settings-box").classList.toggle("hidden", !(p && p.settings));
-  if (!p || !p.settings) return;
-  const edits = fromUser ? {} : ((saved.moduleSettings || {})[p.id] || {});
-  for (const [key, def] of Object.entries(p.settings)) {
-    if (key.startsWith("_")) { box.appendChild(el("p", "muted small wide", String(def))).style.gridColumn = "1 / -1"; continue; }
-    const value = key in edits ? edits[key] : def;
-    const help = (p.help || {})[key] || key;
-    let input;
-    if (typeof def === "boolean") {
-      const lab = el("label", "check"); input = el("input"); input.type = "checkbox"; input.checked = !!value;
-      lab.append(input, document.createTextNode(" " + help)); lab.title = key; input.dataset.key = key; input.dataset.kind = "bool";
-      box.appendChild(lab); continue;
-    }
-    const lab = el("label"); lab.title = key; lab.append(document.createTextNode(help));
-    if (Array.isArray(def) && def.length === 3 && def.every((x) => typeof x === "number")) {
-      input = el("input"); input.type = "color"; input.dataset.kind = "rgb";
-      input.value = "#" + value.map((x) => Math.max(0, Math.min(255, x | 0)).toString(16).padStart(2, "0")).join("");
-    } else if (typeof def === "number") {
-      input = el("input"); input.type = "number"; input.step = Number.isInteger(def) ? "1" : "any";
-      input.value = value; input.dataset.kind = Number.isInteger(def) ? "int" : "num";
-    } else if (Array.isArray(def)) {
-      input = el("input"); input.value = JSON.stringify(value); input.dataset.kind = "json";
-    } else {
-      input = el("input"); input.value = value; input.dataset.kind = "str";
-    }
-    input.dataset.key = key;
-    lab.appendChild(input);
-    box.appendChild(lab);
-  }
-}
-function moduleSettingsValues() {
-  const p = init.programs.find((x) => x.id === $("program").value);
-  if (!p || !p.settings) return null;
-  const out = {};
-  for (const input of $("module-settings").querySelectorAll("input[data-key]")) {
-    const k = input.dataset.key, kind = input.dataset.kind;
-    let v;
-    if (kind === "bool") v = input.checked;
-    else if (kind === "int") v = parseInt(input.value, 10);
-    else if (kind === "num") v = parseFloat(input.value);
-    else if (kind === "rgb") v = [1, 3, 5].map((i) => parseInt(input.value.slice(i, i + 2), 16));
-    else if (kind === "json") { try { v = JSON.parse(input.value); } catch (e) { throw new Error(`параметр ${k}: неверный список`); } }
-    else v = input.value;
-    if (JSON.stringify(v) !== JSON.stringify(p.settings[k])) out[k] = v;
-  }
-  return out;
-}
-
-/* keyboard */
-function keyboardSpec() {
-  const preset = $("kb-preset").value;
-  if (preset === "custom") return { preset, symbols: [...$("kb-symbols").value], rows: +$("kb-rows").value, cols: +$("kb-cols").value };
-  return { preset };
-}
-function keyboardChanged() {
-  const preset = $("kb-preset").value;
-  $("kb-custom").classList.toggle("hidden", preset !== "custom");
-  let symbols, rows, cols;
-  if (preset === "custom") { symbols = [...$("kb-symbols").value]; rows = +$("kb-rows").value; cols = +$("kb-cols").value; }
-  else ({ symbols, layout: [rows, cols] } = init.keyboards[preset]);
-  const box = $("kb-preview");
-  box.textContent = "";
-  box.style.gridTemplateColumns = `repeat(${Math.max(1, cols)}, 26px)`;
-  for (const s of symbols) box.appendChild(el("span", null, shown(s)));
-}
-
-/* fast LLM */
-function ngramInfo() {
-  const m = init.fast_models.find((x) => x.file === $("ngram-file").value);
-  txt($("ngram-info"), m ? `порядок ${m.order} · обучена на ${Math.round(m.train_chars / 1e6)} млн символов (${m.sources.join(", ")})` +
-    (m.bpc ? ` · ${m.bpc} бит/символ на заданиях` : "") : "нет моделей в models/ngram");
+  txt($("program-about"), p ? p.description || "" : "");
 }
 
 /* inference plugin params */
 function inferenceChanged(fromUser) {
   const p = init.inference.find((x) => x.id === $("inf-plugin").value);
-  txt($("inf-doc"), p ? (p.error || "") : "");
+  txt($("inf-error"), p ? (p.error || "") : "");
   const box = $("inf-params");
   box.textContent = "";
   if (!p) return;
@@ -287,9 +182,7 @@ function providerChanged(fromUser) {
   const p = init.providers.find((x) => x.id === $("provider").value);
   $("key-row").classList.toggle("hidden", !p.needs_key);
   $("base-url-row").classList.toggle("hidden", p.id !== "custom");
-  $("remote-row").classList.toggle("hidden", p.remote === false);
   $("api-key").placeholder = p.has_key ? "ключ сохранён — можно заменить" : "вставьте ключ";
-  txt($("provider-help"), p.help);
   const model = (saved.slowModels || {})[p.id] || (fromUser ? "" : saved.slowModel) || p.suggested;
   $("slow-model").value = model || "";
   $("slow-models").textContent = "";
@@ -360,19 +253,16 @@ async function start() {
     body = {
       participant_id: $("participant").value.trim(),
       task: v === "free" ? { kind: "free" } : v === "custom" ? { kind: "custom", text: $("custom").value } : { kind: "task", id: v },
-      llm_on: sLlm.get() === "on", cue: $("cue").checked,
-      physiology: { program: $("program").value, settings: moduleSettingsValues(), keyboard: $("space-eeg").checked,
-        windowed: $("windowed").checked, args: $("program-args").value },
-      keyboard: keyboardSpec(),
+      llm_on: sLlm.get() === "on",
+      physiology: { program: $("program").value },
       fast: { backend: sFast.get(), model_file: $("ngram-file").value, model_id: $("hf-model").value.trim(),
         allow_download: sFast.get() === "kenlm" ? $("kenlm-download").checked : $("hf-download").checked,
-        device: $("hf-device").value, context_source: sCtx.get(),
-        kenlm_id: $("kenlm-id").value.trim(), char_mix: +$("kenlm-mix").value, vocab_limit: +$("kenlm-vocab").value },
+        device: $("hf-device").value, context_source: sCtx.get(), kenlm_id: $("kenlm-id").value.trim() },
       inference: { plugin: $("inf-plugin").value, params: pluginParamValues() },
       stop: { confidence: $("stop-off").checked ? null : +$("stop-conf").value, min_updates: +$("stop-min").value },
       pause_ms: +$("pause-ms").value,
       slow: { backend: sSlow.get(), provider: $("provider").value, base_url: $("base-url").value.trim(),
-        model_id: $("slow-model").value.trim(), allow_remote: $("allow-remote").checked,
+        model_id: $("slow-model").value.trim(),
         every_n_words: +$("every-n").value, window_words: +$("window-w").value,
         include_alternatives: $("alts").checked, alternatives_k: +$("alts-k").value },
     };
@@ -439,23 +329,49 @@ function renderQuad(id, items) {
   }
 }
 
-function renderHistory(list) {
+function renderHistory(s) {
   const box = $("history-list"); box.textContent = "";
-  const items = [...(list || [])].reverse();
-  if (!items.length) { box.appendChild(el("div", "muted small", "медленная БЯМ ещё ничего не исправляла")); return; }
+  const byEpoch = {};
+  for (const c of s.corrections || []) (byEpoch[c.epoch_id] = byEpoch[c.epoch_id] || []).push(c);
+  const rows = [...(s.log || [])].reverse();
   const open = $("history").classList.contains("open");
-  items.forEach((c, i) => {
-    const msg = el("div", "msg" + (c.accepted ? "" : " rejected"));
-    if (!open) msg.style.opacity = Math.max(0.12, 1 - i * 0.28);
-    c.words_in.forEach((w, j) => {
-      const out = c.words_out[j];
-      if (c.accepted && out !== undefined && out !== w) { msg.appendChild(el("span", "from", w)); msg.appendChild(document.createTextNode(" → ")); msg.appendChild(el("span", "to", out)); }
-      else msg.appendChild(el("span", "same", w));
-      if (j < c.words_in.length - 1) msg.appendChild(document.createTextNode("  "));
-    });
-    const meta = c.accepted ? (c.changed ? "" : "без изменений · ") : `отклонено: ${c.reason || "?"} · `;
-    msg.appendChild(el("span", "meta", `${meta}${c.latency_ms} мс · ${mmss(c.t_s)}`));
-    box.appendChild(msg);
+  $("history-toggle").classList.toggle("hidden", rows.length <= 6);
+  if (!rows.length) {
+    const tr = el("tr"); const td = el("td", "muted", "эпох ещё не было"); td.colSpan = 9; tr.appendChild(td); box.appendChild(tr);
+    return;
+  }
+  rows.slice(0, open ? rows.length : 6).forEach((r, i) => {
+    const tr = el("tr");
+    if (!open) tr.style.opacity = Math.max(0.15, 1 - i * 0.17);
+    tr.appendChild(el("td", "muted", r.epoch_id));
+    tr.appendChild(el("td", null, r.target ? shown(r.target) : "—"));
+    const pick = r.decided == null ? "—" : r.typed ? shown(r.typed) : r.decided;
+    tr.appendChild(el("td", "pick" + (r.correct === false ? " bad" : r.correct ? " ok" : ""), pick));
+    tr.appendChild(el("td", r.uncertain ? "unsure" : null, r.confidence == null ? "" : r.confidence.toFixed(2)));
+    const alts = el("td", "alts");
+    for (const [sym, p] of r.top || []) {
+      const sp = el("span", sym === r.decided ? "on" : null, sym === "_" ? "␣" : shown(sym));
+      sp.appendChild(el("i", null, Math.round(p * 100)));
+      alts.appendChild(sp);
+    }
+    tr.appendChild(alts);
+    tr.appendChild(el("td", "muted", r.flashes));
+    tr.appendChild(el("td", "muted", r.duration_s));
+    tr.appendChild(el("td", "muted", (r.stopped_early ? "досрочно · " : "") + (DECIDED[r.decided_on] || r.decided_on)));
+    const fix = el("td", "fix");
+    for (const c of byEpoch[r.epoch_id] || []) {
+      const line = el("div", c.accepted ? (c.changed ? "" : "same") : "rejected");
+      if (!c.accepted) line.textContent = `отклонено: ${c.reason || "?"}`;
+      else if (!c.changed) line.textContent = "без изменений";
+      else c.words_in.forEach((w, j) => {
+        const out = c.words_out[j];
+        if (out !== w) { line.appendChild(el("s", null, w)); line.appendChild(document.createTextNode("→")); line.appendChild(el("b", null, out)); line.appendChild(document.createTextNode(" ")); }
+      });
+      line.title = `${c.words_in.join(" ")} → ${c.words_out.join(" ")} · ${c.latency_ms} мс`;
+      fix.appendChild(line);
+    }
+    tr.appendChild(fix);
+    box.appendChild(tr);
   });
 }
 
@@ -505,26 +421,23 @@ function render(s) {
   ps.className = "muted small" + (prog && !prog.running && prog.returncode ? " bad" : "");
   txt(ps, prog ? (prog.running ? `программа ${prog.program} работает` : `программа ${prog.program} завершилась (код ${prog.returncode})`) : "");
 
-  renderHistory(s.corrections);
+  renderHistory(s);
   $("pause-btn").disabled = $("stop-btn").disabled = s.finished;
   txt($("pause-btn"), s.paused ? "продолжить" : "пауза");
   $("new-btn").classList.toggle("hidden", !s.finished);
   txt($("end-note"), s.finished ? `завершено: ${s.end_reason}${s.error ? " — " + s.error : ""}` : (st.pending_corrections ? `в очереди исправлений: ${st.pending_corrections}` : ""));
 
-  const ul = $("modules"); ul.textContent = "";
-  for (const m of mods) ul.appendChild(el("li", null, `${m.module} (${m.kind === "likelihood" ? "декодер" : "стимуляция"}) — сообщений ${m.messages}` +
-    (m.last_message_s == null ? "" : `, последнее ${m.last_message_s} с назад`)));
-  if (!mods.length) ul.appendChild(el("li", "muted", "пока ни один модуль не прислал поток"));
-  const log = $("log"); log.textContent = "";
-  for (const r of [...s.log].reverse()) {
-    const tr = el("tr");
-    const cells = [r.epoch_id, r.target ? shown(r.target) : "", r.decided == null ? "—" : shown(r.decided),
-      r.confidence == null ? "" : r.confidence.toFixed(2), r.flashes, r.duration_s, (r.stopped_early ? "досрочно, " : "") + r.decided_on];
-    cells.forEach((v, i) => { const td = el("td", i === 2 && r.correct === false ? "bad" : i === 2 && r.correct ? "ok" : "", v); tr.appendChild(td); });
-    log.appendChild(tr);
-  }
-  txt($("program-log"), prog ? (prog.log_tail || []).join("\n") : "");
+  const crashed = !!(prog && !prog.running && prog.returncode);
+  $("program-log").classList.toggle("hidden", !crashed);
+  txt($("program-log"), crashed ? (prog.log_tail || []).join("\n") : "");
   txt($("dir"), s.directory);
 }
+
+/* theme: dark or light; the system setting until the operator picks one */
+function setTheme(theme, remember) {
+  document.documentElement.dataset.theme = theme;
+  if (remember) { saved.theme = theme; store(saved); }
+}
+setTheme(load().theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"), false);
 
 boot();

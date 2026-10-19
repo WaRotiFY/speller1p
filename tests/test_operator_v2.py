@@ -1,4 +1,4 @@
-"""Operator v2: keyboard, n-gram, inference plugins, slow LLM over a chat API, modules, recording."""
+"""Operator v2: keyboard from the module, n-gram, inference plugins, slow LLM over a chat API, recording."""
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -9,10 +9,10 @@ import pytest
 
 from eeg_speller.core.config import load_config
 from eeg_speller.core.distributions import Repertoire
-from eeg_speller.core.keyboard import PRESETS, keyboard_text, lm_char, project, symbol_for_char, typed_char
+from eeg_speller.core.keyboard import PRESETS, keyboard_text, lm_char, project, symbol_for_char, typed_char, validate_keyboard
 from eeg_speller.epoch.plugins import PluginFusion, list_plugins
 from eeg_speller.external.controller import ExternalSession
-from eeg_speller.external.launcher import merge_settings, stimulus_programs
+from eeg_speller.external.launcher import build_args, stimulus_programs
 from eeg_speller.external.server import build_session_config, init_payload
 from eeg_speller.external.transport import MemoryTransport
 from eeg_speller.llm.backends import chat_api
@@ -39,13 +39,12 @@ def test_keyboard_mapping_and_projection():
     assert symbol_for_char("р", sym) == "Р"
 
 
-def test_config_accepts_other_layouts_and_rejects_bad_ones(tmp_path):
-    cfg, _ = build_session_config({"keyboard": {"preset": "jcuken_4x11_digits"}})
-    assert cfg.repertoire["layout"] == [4, 11] and len(cfg.repertoire["symbols"]) == 44
+def test_module_keyboards_are_checked():
+    validate_keyboard(PRESETS["jcuken_4x11_digits"]["symbols"], [4, 11])
     with pytest.raises(ValueError):
-        build_session_config({"keyboard": {"preset": "custom", "symbols": list("абв"), "rows": 1, "cols": 2}})
+        validate_keyboard(list("абв"), [1, 2])          # does not fit the layout
     with pytest.raises(ValueError):
-        build_session_config({"keyboard": {"preset": "custom", "symbols": list("аав"), "rows": 1, "cols": 3}})
+        validate_keyboard(list("аав"), [1, 3])          # repeated key
 
 
 # ------------------------------------------------------------------ fast LLM
@@ -127,8 +126,10 @@ def test_chat_api_prompt_alternatives_and_remote_guard(fake_api, monkeypatch, tm
         chat_api.base_url_for("custom", "http://example.com/v1")                    # http only for loopback
     with pytest.raises(ValueError):
         chat_api.check_template("без разделителя {context} {words}")
-    with pytest.raises(ValueError):
-        build_session_config({"slow": {"backend": "chat_api", "provider": "groq", "model_id": "x"}})
+    cfg, _ = build_session_config({"slow": {"backend": "chat_api", "provider": "groq", "model_id": "x"}})
+    assert cfg.llm["allow_remote"]                  # choosing a cloud provider is the consent
+    cfg, _ = build_session_config({"slow": {"backend": "mock_dictionary"}})
+    assert not cfg.llm["allow_remote"]
 
 
 def test_keys_are_stored_locally_only(monkeypatch, tmp_path):
@@ -141,35 +142,46 @@ def test_keys_are_stored_locally_only(monkeypatch, tmp_path):
 
 
 # ------------------------------------------------------------------ modules
-def test_module_folders_discovered_with_settings():
+def test_modules_carry_their_own_keyboard_and_need_no_arguments():
     progs = {p["id"]: p for p in stimulus_programs()}
-    for pid in ("modules/flash_rows_cols", "modules/moving_letters", "modules/moving_circles"):
-        assert pid in progs and progs[pid]["settings"] and progs[pid]["keyboard"] and progs[pid]["windowed"]
-    defaults = progs["modules/flash_rows_cols"]["settings"]
-    merged = merge_settings(defaults, {"n_trials": 3, "background": [0, 0, 0]})
-    assert merged["n_trials"] == 3 and merged["flash_ms"] == defaults["flash_ms"]
-    with pytest.raises(ValueError):
-        merge_settings(defaults, {"unknown": 1})
-    with pytest.raises(ValueError):
-        merge_settings(defaults, {"n_trials": "много"})
+    for pid in ("modules/flash_rows_cols", "modules/moving_letters", "modules/moving_circles", "modules/simulator"):
+        info = progs[pid]
+        cfg = info["settings"]
+        assert len(cfg["alphabet"]) == cfg["num_rows"] * cfg["num_cols"], pid
+        validate_keyboard(list(cfg["alphabet"]), [cfg["num_rows"], cfg["num_cols"]])
+        assert build_args(info, "привет") == []          # the operator only picks the module
+
+
+def test_module_tools_keyboard_and_cue():
+    import sys
+    sys.path.insert(0, str(ROOT / "stimulus_kit"))
+    from module_tools import cue_for, keyboard_of
+    cfg = {"alphabet": "абв_", "num_rows": 2, "num_cols": 2, "sentence": "Ба в"}
+    symbols, layout = keyboard_of(cfg)
+    assert symbols == ["а", "б", "в", "_"] and layout == (2, 2)
+    assert cue_for(cfg, "", symbols) == "б" and cue_for(cfg, "ба", symbols) == "_"
+    assert cue_for(cfg, "ба в", symbols) is None and cue_for({**cfg, "sentence": ""}, "", symbols) is None
 
 
 # ---------------------------------------------------------- session recording
 def test_session_with_api_correction_records_raw_likelihood_and_timeline(fake_api, tmp_path, monkeypatch):
     monkeypatch.setattr(chat_api, "KEYS_FILE", tmp_path / "keys.json")
     cfg, passport = build_session_config({
-        "keyboard": {"preset": "jcuken_4x10"}, "cue": True, "inference": {"plugin": "log_pool", "params": {"alpha": 0.0}},
+        "inference": {"plugin": "log_pool", "params": {"alpha": 0.0}},
         "slow": {"backend": "chat_api", "provider": "custom", "base_url": fake_api, "model_id": "m",
                  "every_n_words": 1, "window_words": 2}})
     cfg = cfg.model_copy(update={"slow_llm": {**cfg.slow_llm, "min_context_words": 0}})
     tr = MemoryTransport()
     plan = list("дай пдед ")
-    cues = []
+    keyboards = []
+    kb = PRESETS["jcuken_4x10"]
+    # The module announces its keyboard as soon as it connects (speller-link@1, "keyboard").
+    tr.deliver("stimuli", {"event": "keyboard", "symbols": kb["symbols"], "layout": list(kb["layout"])})
 
     def module(msg):
         if msg["cmd"] != "epoch_start":
             return
-        cues.append(msg.get("cue"))
+        keyboards.append(tuple(msg["layout"]))
         k = sum(1 for m in tr.sent if m["cmd"] == "result" and m.get("symbol"))
         sym = next(s for s in msg["symbols"] if typed_char(s) == plan[min(k, len(plan) - 1)])
         p = {s: (0.9 if s == sym else 0.1 / (len(msg["symbols"]) - 1)) for s in msg["symbols"]}
@@ -181,9 +193,12 @@ def test_session_with_api_correction_records_raw_likelihood_and_timeline(fake_ap
     assert s.wait_finished(60)
     state = s.monitor()
     assert state["text"] == "дай пдед " and state["corrected"] == "дай плед "
-    assert cues[:3] == ["Д", "А", "Й"]
+    assert set(keyboards) == {tuple(kb["layout"])}
+    assert state["keyboard"]["symbols"] == list(kb["symbols"])
     assert any(c["changed"] for c in state["corrections"])
     events = read_events(s.storage.directory)
+    kb_event = next(e for e in events if e["type"] == "keyboard_set")["payload"]
+    assert kb_event["layout"] == list(kb["layout"]) and not kb_event["task_characters_missing"]
     obs = next(e for e in events if e["type"] == "physiology_observation")
     assert "lsl_s" in obs and isinstance(obs["payload"]["raw"], dict)
     assert obs["payload"]["recv_lsl_s"] is not None and obs["payload"]["sent_lsl_s"] is not None

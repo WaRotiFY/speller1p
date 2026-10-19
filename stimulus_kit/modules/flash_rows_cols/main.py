@@ -11,7 +11,7 @@ import time
 
 import pygame
 
-from module_tools import color, load_settings, log_path, module_args, place_window
+from module_tools import color, cue_for, keyboard_of, log_path, module_args, place_window
 from speller_link import SpellerLink, now
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -43,7 +43,7 @@ def flash_order(groups, n_trials, min_gap, rng):
 
 def main():
     args = module_args(__doc__, os.path.join(HERE, "settings.json"))
-    cfg = load_settings(args.settings)
+    cfg = args.config
     if not args.windowed:
         place_window(cfg.get("window_x"), cfg.get("window_y"))
     pygame.init()
@@ -64,7 +64,9 @@ def main():
     rng = random.Random(cfg.get("seed"))
     log = open(log_path(time.strftime("flash_%Y-%m-%d_%H-%M-%S.txt")), "w", encoding="utf-8")
 
-    link = SpellerLink(name="flash_rows_cols", role="stimulus+decoder" if args.keyboard else "stimulus")
+    symbols, layout = keyboard_of(cfg)
+    link = SpellerLink(name="flash_rows_cols", role="stimulus+decoder" if args.keyboard else "stimulus",
+                       keyboard=symbols, layout=layout)
     if args.keyboard:
         from keyboard_decoder import KeyboardDecoder
 
@@ -122,11 +124,12 @@ def main():
         isi_s = cfg.get("isi_ms", 75) / 1000
         n_trials = int(cfg.get("n_trials", 5))
         decoder = KeyboardDecoder(epoch.symbols) if args.keyboard else None
-        log.write(f"epoch {epoch.id} cue {epoch.cue}\n")
+        cue = cue_for(cfg, epoch.text, epoch.symbols)       # IMPROV[Q-42]
+        log.write(f"epoch {epoch.id} cue {cue}\n")
 
         hold(now() + cfg.get("rest_before_ms", 1000) / 1000, rows, text=epoch.text)
-        if epoch.cue:
-            hold(now() + cfg.get("cue_ms", 1000) / 1000, rows, cue=epoch.cue, text=epoch.text)
+        if cue:
+            hold(now() + cfg.get("cue_ms", 1000) / 1000, rows, cue=cue, text=epoch.text)
         draw(rows, text=epoch.text)
         pygame.display.flip()
 

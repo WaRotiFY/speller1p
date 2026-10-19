@@ -30,4 +30,4 @@ external:
   epoch_timeout_s: 120
   wait_modules_s: 60
   send_text: true
-  send_cue: false              # copy-spelling / calibration: tell the module the target symbol (Q-42)
+  keyboard_wait_s: 5.0         # after a module connects: wait for its keyboard (Q-38)

@@ -3,11 +3,10 @@
     python -m eeg_speller.external.server --port 8770
     open http://127.0.0.1:8770/
 
-Before the start the operator sets up the session block by block: physiology (a program
-from stimulus_kit/modules with its settings.json), keyboard, fast LLM (pretrained n-gram
-or a Hugging Face model by name), statistical inference (a plugin from inference/) and
-slow LLM (mock, local Ollama or a free cloud API, with its prompt). The participant's
-screen is drawn by the chosen program, not here.
+Before the start the operator sets up the session block by block: physiology (one of the
+modules in stimulus_kit/modules; the module owns its settings and keyboard), fast LLM,
+statistical inference (a plugin from inference/) and slow LLM with its prompt. The
+participant's screen is drawn by the chosen module, not here.
 """
 from __future__ import annotations
 
@@ -21,10 +20,9 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 from eeg_speller.core.config import Config, _merge, load_config
-from eeg_speller.core.keyboard import PRESETS, validate_keyboard
 from eeg_speller.epoch.plugins import list_plugins
 from eeg_speller.external.controller import ExternalSession, default_model_factory
-from eeg_speller.external.launcher import StimulusProcess, build_args, merge_settings, stimulus_programs
+from eeg_speller.external.launcher import StimulusProcess, build_args, stimulus_programs
 from eeg_speller.llm.backends import chat_api
 from eeg_speller.llm.backends import kenlm_words
 from eeg_speller.llm.backends.char_ngram import available_models
@@ -48,6 +46,19 @@ def _num(value, low, high, name, integer=False):
     return int(value) if integer else float(value)
 
 
+EXTRAS = {"kenlm": "kenlm", "torch": "hf", "transformers": "hf", "pylsl": "", "pygame": "", "pyedflib": ""}
+
+
+def install_hint(exc: ImportError) -> str:
+    """A missing package -> the exact command that installs it."""
+    name = (getattr(exc, "name", None) or "").split(".")[0]
+    extra = EXTRAS.get(name)
+    if extra is None:
+        return f"не установлен пакет {name or exc}: pip install {name}".strip()
+    return f'не установлен пакет {name}: uv pip install -e ".[{extra}]"' if extra else \
+        f"не установлен пакет {name}: uv pip install -e ."
+
+
 def build_session_config(body: dict) -> tuple[Config, dict]:
     """Operator form -> validated config + a short human-readable passport."""
     base = load_config(BASE_PROFILE).model_dump()
@@ -56,19 +67,6 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
 
     llm_on = bool(body.get("llm_on", True))
     patch["mode"] = {"llm": "on" if llm_on else "off"}
-
-    kb = body.get("keyboard") or {}
-    preset = kb.get("preset", "abc_6x6")
-    if preset == "custom":
-        symbols = list(kb.get("symbols") or "")
-        layout = [int(kb.get("rows", 0)), int(kb.get("cols", 0))]
-    elif preset in PRESETS:
-        symbols, layout = PRESETS[preset]["symbols"], PRESETS[preset]["layout"]
-    else:
-        raise ValueError("unknown keyboard preset")
-    validate_keyboard(symbols, layout)
-    patch["repertoire"] = {"symbols": symbols, "layout": layout}
-    passport["keyboard"] = f"{preset} {layout[0]}×{layout[1]}"
 
     fast = body.get("fast") or {}
     backend = fast.get("backend", "ngram")
@@ -93,9 +91,7 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
             raise ValueError("enter a Hugging Face name or a path to a KenLM file")
         patch["fast_llm"] = {"backend": "kenlm", "model_id": model_id,
                              "allow_download": bool(fast.get("allow_download")),
-                             "char_mix": _num(fast.get("char_mix", 0.1), 0.0, 1.0, "char n-gram share"),
-                             "vocab_limit": _num(fast.get("vocab_limit", 60000), 1000, 500000, "vocabulary",
-                                                 integer=True)}
+                             "char_mix": 0.1, "vocab_limit": 60000}
         passport["fast"] = f"KenLM {model_id.split('/')[-1]}"
     elif backend == "mock_ngram":
         patch["fast_llm"] = {"backend": "mock_ngram", "model_id": "mock-ngram-5"}
@@ -121,7 +117,6 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
         ext["stop_confidence"] = None if stop["confidence"] in (None, "", 0) else _num(stop["confidence"], 0.5, 1.0, "stop confidence")
     if "min_updates" in stop:
         ext["min_updates_before_stop"] = _num(stop["min_updates"], 0, 1000, "min updates", integer=True)
-    ext["send_cue"] = bool(body.get("cue"))
     patch["external"] = ext
     if "pause_ms" in body:
         patch["stimulus"] = {"pause_ms": _num(body["pause_ms"], 500, 5000, "pause", integer=True) // 10 * 10}
@@ -132,7 +127,7 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
                "window_words": _num(slow.get("window_words", 3), 1, 20, "window", integer=True),
                "include_alternatives": bool(slow.get("include_alternatives", True)),
                "alternatives_k": _num(slow.get("alternatives_k", 4), 1, 10, "alternatives K", integer=True)}
-    allow_remote = bool(slow.get("allow_remote"))
+    allow_remote = False
     if sb == "off":
         s_patch["backend"] = "off"
         passport["slow"] = "выкл."
@@ -142,8 +137,7 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
     elif sb == "chat_api":
         provider = slow.get("provider", "ollama")
         url = chat_api.base_url_for(provider, slow.get("base_url") if provider == "custom" else None)
-        if chat_api.is_remote(url) and not allow_remote:
-            raise ValueError("cloud slow LLM: tick 'allow sending typed text to the cloud' first")
+        allow_remote = chat_api.is_remote(url)      # choosing a cloud provider is the consent (Q-41)
         model_id = str(slow.get("model_id") or "").strip()
         if not model_id:
             raise ValueError("choose a model for the slow LLM")
@@ -199,28 +193,18 @@ class Manager:
                 if info is None:
                     raise ValueError("unknown stimulus program")
                 passport["physiology"] = info["label"]
-            extra = phys.get("args") or ""
-            if not isinstance(extra, str) or len(extra) > 300:
-                raise ValueError("program arguments must be a short string")
-            module_settings = merge_settings(info.get("settings") if info else None, phys.get("settings"))
             passport.update(participant=participant, task=task_id)
             transport = self.transport_factory() if self.transport_factory else None
             session = ExternalSession(cfg, target, self.output, transport=transport,
                                       model_factory=self.model, profile=BASE_PROFILE.name, passport=passport)
             self.stimulus = None
             if info is not None:
-                settings_file = None
-                if module_settings is not None:
-                    settings_file = session.storage.directory / "external" / "stimulus_settings.json"
-                    settings_file.write_text(json.dumps(module_settings, ensure_ascii=False, indent=2),
-                                             encoding="utf-8")
-                args = build_args(info, bool(phys.get("keyboard")), extra, target, settings_file,
-                                  bool(phys.get("windowed")))
+                args = build_args(info, target)
                 # The control stream exists already, so the program finds the speller at once.
                 self.stimulus = StimulusProcess(program, args, session.storage.directory / "external" / "stimulus.log")
                 session.rec.emit("Session Recorder", "command_issued",
                                  {"command": "start_stimulus_program", "text": program, "result": args,
-                                  "settings": module_settings})
+                                  "settings": info.get("settings")})
             self.session = session.start()
             threading.Thread(target=self._stop_stimulus_when_done, args=(session, self.stimulus),
                              daemon=True).start()
@@ -261,8 +245,6 @@ class Manager:
 def init_payload() -> dict:
     base = load_config(BASE_PROFILE)
     return {"tasks": read_task_list(), "programs": stimulus_programs(),
-            "keyboards": {k: {"label": v["label"], "symbols": v["symbols"], "layout": v["layout"]}
-                          for k, v in PRESETS.items()},
             "fast_models": available_models(), "inference": list_plugins(),
             "kenlm": {"available": kenlm_words.kenlm_available(), "default": kenlm_words.DEFAULT_REPO,
                       "downloaded": kenlm_words.downloaded_models()},
@@ -370,6 +352,8 @@ def make_handler(manager: Manager):
                     s.request_stop("operator_stopped")
                     return self._send(200, manager.monitor())
                 return self._send(404, {"error": "not found"})
+            except ImportError as exc:
+                return self._send(400, {"error": install_hint(exc)})
             except (ValueError, TypeError, KeyError, PermissionError, json.JSONDecodeError) as exc:
                 return self._send(400, {"error": str(exc)})
 

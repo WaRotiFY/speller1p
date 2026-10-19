@@ -21,6 +21,8 @@ import pygame  # noqa: E402
 from speller_link import SpellerLink, now  # noqa: E402
 from keyboard_decoder import KeyboardDecoder  # noqa: E402
 
+KEYBOARD = list("абвгдежзийклмнопрстуфхцчшщъыьэюя_.,⌫")     # the module owns its keyboard ("_" is a space)
+
 BG, DIM, LIT, TEXT, ACCENT = (12, 14, 20), (90, 96, 110), (255, 255, 255), (220, 224, 232), (255, 196, 60)
 
 
@@ -43,7 +45,8 @@ def main():
     big = pygame.font.SysFont("dejavusans,arial", h // 11)
     small = pygame.font.SysFont("dejavusans,arial", h // 22)
 
-    link = SpellerLink(name="pygame_matrix", role="stimulus+decoder" if args.keyboard else "stimulus")
+    link = SpellerLink(name="pygame_matrix", role="stimulus+decoder" if args.keyboard else "stimulus",
+                       keyboard=KEYBOARD, layout=(6, 6))
     flip_cost = []
     while True:
         epoch = wait_epoch(link, screen, small)

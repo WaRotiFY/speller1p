@@ -10,6 +10,7 @@
   <header class="top">
     <div class="logo"><span class="logo-mark">⌁</span>спеллер<span class="logo-sub">оператор</span></div>
     <div class="top-right">
+      <button id="theme-btn" class="theme-btn" aria-label="светлая или тёмная тема" title="светлая / тёмная тема"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 2a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
       <span id="modules-pill" class="pill off">модули: нет</span>
       <span id="phase-pill" class="pill">настройка</span>
     </div>
@@ -33,60 +34,31 @@
         <div class="seg" id="llm-mode" data-value="on">
           <button data-v="on">с БЯМ</button><button data-v="off">без БЯМ</button>
         </div>
-        <label class="check"><input type="checkbox" id="cue"> показывать испытуемому целевую букву (copy-spelling, калибровка)</label>
       </div>
     </section>
 
     <section class="block" id="b-phys">
-      <h2><span class="num">1</span>физиология <span class="hint-inline">программа из stimulus_kit/modules — экран испытуемого</span></h2>
-      <div class="grid">
-        <label class="wide">программа стимуляции <select id="program"></select></label>
-      </div>
-      <p id="program-author" class="muted small"></p>
-      <div class="row-opts">
-        <label class="check" id="keyboard-row"><input type="checkbox" id="space-eeg"> пробел вместо ЭЭГ</label>
-        <label class="check" id="windowed-row"><input type="checkbox" id="windowed"> в окне, а не на весь экран</label>
-      </div>
-      <details id="module-settings-box" class="sub-block">
-        <summary>параметры модуля <span class="muted small">settings.json — правки действуют только на эту сессию</span></summary>
-        <div id="module-settings" class="settings-grid"></div>
-        <button class="link" id="module-reset">вернуть значения из settings.json</button>
-      </details>
-      <label class="wide small-label">доп. аргументы программы <input id="program-args" maxlength="300" autocomplete="off" placeholder="например --d-prime 1.5"></label>
-    </section>
-
-    <section class="block" id="b-keys">
-      <h2><span class="num">2</span>клавиатура <span class="hint-inline">спеллер присылает её модулю в каждой эпохе</span></h2>
-      <select id="kb-preset"></select>
-      <div id="kb-custom" class="grid hidden">
-        <label class="wide">символы подряд <input id="kb-symbols" maxlength="120" autocomplete="off"></label>
-        <label>строк <input id="kb-rows" type="number" min="1" max="12" value="6"></label>
-        <label>столбцов <input id="kb-cols" type="number" min="1" max="16" value="6"></label>
-      </div>
-      <div id="kb-preview" class="kb-preview"></div>
+      <h2><span class="num">1</span>физиология</h2>
+      <label>модуль <select id="program"></select></label>
+      <p id="program-about" class="muted small"></p>
     </section>
 
     <section class="block" id="b-fast">
-      <h2><span class="num">3</span>быстрая БЯМ <span class="hint-inline">подсказка следующей буквы в каждой эпохе</span></h2>
+      <h2><span class="num">2</span>быстрая БЯМ</h2>
       <div class="seg" id="fast-backend" data-value="ngram">
-        <button data-v="ngram" title="буквенная 4-грамма из models/ngram">4-грамма</button><button data-v="kenlm" title="словная n-грамма KenLM, по имени на Hugging Face или файлу">KenLM</button><button data-v="hf_causal" title="нейросеть с Hugging Face по имени">HF</button><button data-v="mock_ngram" title="учебная 5-грамма на маленьком корпусе">mock</button>
+        <button data-v="ngram">4-грамма</button><button data-v="kenlm">KenLM</button><button data-v="hf_causal">HF</button><button data-v="mock_ngram">mock</button>
       </div>
       <div id="fast-ngram" class="grid">
         <label class="wide">модель <select id="ngram-file"></select></label>
-        <p id="ngram-info" class="muted small wide"></p>
       </div>
       <div id="fast-kenlm" class="grid hidden">
-        <label class="wide">модель KenLM: имя на huggingface.co или путь к .arpa / .bin <input id="kenlm-id" autocomplete="off"></label>
-        <label>доля буквенной 4-граммы λ <input id="kenlm-mix" type="number" min="0" max="1" step="0.05" value="0.1"></label>
-        <label>слов в словаре <input id="kenlm-vocab" type="number" min="1000" max="500000" step="1000" value="60000"></label>
-        <label class="check wide"><input type="checkbox" id="kenlm-download"> разрешить скачать (≈1,5 ГБ, один раз в models/kenlm)</label>
-        <p id="kenlm-info" class="muted small wide"></p>
+        <label class="wide">модель (Hugging Face или путь к .arpa / .bin) <input id="kenlm-id" autocomplete="off"></label>
+        <label class="check wide"><input type="checkbox" id="kenlm-download"> разрешить скачать</label>
       </div>
       <div id="fast-hf" class="grid hidden">
-        <label class="wide">имя модели на huggingface.co <input id="hf-model" placeholder="Qwen/Qwen2.5-0.5B" autocomplete="off"></label>
+        <label class="wide">модель на Hugging Face <input id="hf-model" placeholder="Qwen/Qwen2.5-0.5B" autocomplete="off"></label>
         <label>устройство <select id="hf-device"><option>cpu</option><option>cuda</option><option>mps</option></select></label>
         <label class="check"><input type="checkbox" id="hf-download"> разрешить скачать</label>
-        <p class="muted small wide">нужен <code>pip install -e ".[hf]"</code>. модель должна отдавать полное распределение следующего токена — подходят обычные causal LM (Qwen, ruGPT, T-lite…).</p>
       </div>
       <div class="row-opts">
         <span class="muted small">контекст:</span>
@@ -97,9 +69,9 @@
     </section>
 
     <section class="block" id="b-inf">
-      <h2><span class="num">4</span>статистический вывод <span class="hint-inline">модуль из inference/ — как слить БЯМ и ЭЭГ</span></h2>
+      <h2><span class="num">3</span>статистический вывод</h2>
       <select id="inf-plugin"></select>
-      <p id="inf-doc" class="muted small"></p>
+      <p id="inf-error" class="error small"></p>
       <div id="inf-params" class="settings-grid"></div>
       <div class="settings-grid">
         <label>стоп при уверенности ≥ <input id="stop-conf" type="number" step="0.01" min="0.5" max="1"></label>
@@ -110,7 +82,7 @@
     </section>
 
     <section class="block" id="b-slow">
-      <h2><span class="num">5</span>медленная БЯМ <span class="hint-inline">исправление набранных слов</span></h2>
+      <h2><span class="num">4</span>медленная БЯМ</h2>
       <div class="seg" id="slow-backend" data-value="mock_dictionary">
         <button data-v="off">выкл.</button><button data-v="mock_dictionary">словарь</button><button data-v="chat_api">БЯМ по API</button>
       </div>
@@ -120,7 +92,6 @@
           <label class="hidden" id="base-url-row">адрес API <input id="base-url" placeholder="http://127.0.0.1:8080/v1" autocomplete="off"></label>
           <label id="key-row">ключ API <span class="key-line"><input id="api-key" type="password" autocomplete="off" placeholder="вставьте ключ"><button id="key-save" class="small-btn">сохранить</button></span></label>
         </div>
-        <p id="provider-help" class="muted small"></p>
         <div class="grid">
           <label class="wide">модель
             <span class="key-line"><input id="slow-model" list="slow-models" autocomplete="off"><button id="models-refresh" class="small-btn">список</button></span>
@@ -128,12 +99,11 @@
           </label>
         </div>
         <p id="models-info" class="muted small"></p>
-        <label class="check warn" id="remote-row"><input type="checkbox" id="allow-remote"> разрешить отправку набранного текста в облако (третьей стороне)</label>
       </div>
       <div class="settings-grid">
         <label>исправлять каждые N слов <input id="every-n" type="number" min="1" max="20" value="1"></label>
         <label>окно: последние W слов <input id="window-w" type="number" min="1" max="20" value="3"></label>
-        <label class="check"><input type="checkbox" id="alts" checked> передавать варианты букв (апостериорные)</label>
+        <label class="check"><input type="checkbox" id="alts" checked> передавать варианты букв</label>
         <label>вариантов на букву <input id="alts-k" type="number" min="1" max="10" value="4"></label>
       </div>
       <button id="prompt-open" class="link">промпт медленной БЯМ <span id="prompt-edited" class="muted small"></span></button>
@@ -188,29 +158,22 @@
       </div>
     </div>
 
-    <div class="history" id="history">
-      <div class="history-head"><span>история правок</span><button id="history-toggle" class="link small">показать всё</button></div>
-      <div id="history-list" class="history-list"></div>
-    </div>
-
     <div class="actions">
       <button id="pause-btn" class="ghost">пауза</button>
       <button id="stop-btn" class="ghost danger">завершить</button>
       <button id="new-btn" class="start hidden">новая сессия</button>
       <span id="end-note" class="muted small"></span>
     </div>
+    <pre id="program-log" class="log-tail hidden"></pre>
 
-    <details class="more">
-      <summary>подробнее</summary>
-      <h3>модули</h3>
-      <ul id="modules" class="plain"></ul>
-      <h3>последние эпохи</h3>
-      <table><thead><tr><th>#</th><th>цель</th><th>выбор</th><th>увер.</th><th>стимулов</th><th>сек</th><th>как решено</th></tr></thead>
-        <tbody id="log"></tbody></table>
-      <h3>программа стимуляции</h3>
-      <pre id="program-log" class="log-tail"></pre>
-      <p class="muted small">каталог записи: <code id="dir"></code></p>
-    </details>
+    <div class="history" id="history">
+      <div class="history-head"><span>история эпох</span><button id="history-toggle" class="link small">показать всё</button></div>
+      <div class="history-scroll"><table class="epochs">
+        <thead><tr><th>#</th><th>цель</th><th>выбор</th><th>увер.</th><th>варианты</th><th>стим.</th><th>сек</th><th>как решено</th><th>медленная БЯМ</th></tr></thead>
+        <tbody id="history-list"></tbody>
+      </table></div>
+    </div>
+    <p class="muted small dir">запись: <code id="dir"></code></p>
   </main>
 
   <!-- ============================== PROMPT ============================== -->

@@ -31,7 +31,7 @@ def run(text, d_prime=1.0, flash_ms=None, isi_ms=None, repetitions=None, seed=0,
         soa = flash_s + (isi_ms if isi_ms is not None else cfg.get("isi_ms", 150)) / 1000
         reps = repetitions or cfg.get("n_repetitions", 5)
         pos = len(epoch.text)
-        target = text[pos] if pos < len(text) else " "
+        target = _symbol(text[pos] if pos < len(text) else " ", epoch.symbols)
         rows = epoch.rows()
         groups = list(rows) + [[r[c] for r in rows] for c in range(len(rows[0]))]
         logl = {s: 0.0 for s in epoch.symbols}
@@ -61,6 +61,14 @@ def run(text, d_prime=1.0, flash_ms=None, isi_ms=None, repetitions=None, seed=0,
         if verbose and res:
             print("epoch %d: chose %r, text %r" % (epoch.id, res.get("symbol"), res.get("text")), flush=True)
     return flashes_sent
+
+
+def _symbol(ch, symbols):
+    """Character of the phrase -> keyboard symbol (case-insensitive, "_" = space)."""
+    for s in symbols:
+        if s == ch or s.lower() == ch.lower() or (s == "_" and ch == " "):
+            return s
+    return ch
 
 
 def _softmax(logl):

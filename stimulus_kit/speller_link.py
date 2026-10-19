@@ -6,7 +6,7 @@ Copy this file next to your program. It depends only on ``pylsl``
 Minimum rule for a stimulus program (everything else is optional)::
 
     from speller_link import SpellerLink
-    link = SpellerLink()
+    link = SpellerLink(keyboard="АБВГДЕ…", layout=(6, 6))   # your keyboard
     ...
     pygame.display.flip()
     link.flash(["а", "б", "в", "г", "д", "е"])   # right after the flip
@@ -22,7 +22,8 @@ Optional calls::
 All messages are JSON strings on three LSL marker streams:
 
     SpellerControl     speller -> modules    epoch_start / stop / result / pause / resume / end
-    SpellerStimuli     stimulus -> speller   {"epoch": N, "flash": [symbols]}   (+ {"epoch": N, "event": "done"})
+    SpellerStimuli     stimulus -> speller   {"epoch": N, "flash": [symbols]}, {"epoch": N, "event": "done"},
+                                             {"event": "keyboard", "symbols": [...], "layout": [rows, cols]}
     SpellerLikelihood  decoder  -> speller   {"epoch": N, "p": {symbol: value}, "final": bool}
 
 The LSL timestamp of a ``flash`` sample is the moment of the flip in the LSL clock
@@ -52,8 +53,6 @@ class Epoch:
         self.layout = tuple(msg.get("layout") or (6, 6))
         self.text = msg.get("text", "")
         self.settings = dict(msg.get("settings") or {})
-        # Symbol to attend, sent only in copy-spelling / calibration sessions; else None.
-        self.cue = msg.get("cue")
 
     def rows(self):
         """Symbols split into rows of the layout (a convenience for matrix displays)."""
@@ -73,13 +72,24 @@ class SpellerLink:
     """Connection of one stimulus and/or decoder module to the speller.
 
     ``role`` only names the module in the speller's log ("stimulus", "decoder",
-    or both: "stimulus+decoder"). ``wait_for_speller`` blocks until the speller
-    publishes its control stream; set it to 0 to start without a speller.
+    or both: "stimulus+decoder"). ``keyboard`` is the module's keyboard: a string or
+    list of symbols in reading order (``_`` = space, ``⌫`` = delete) with ``layout``
+    (rows, columns); the speller types with exactly these symbols. ``wait_for_speller``
+    blocks until the speller publishes its control stream; 0 starts without a speller.
     """
 
-    def __init__(self, name="stimulus", role="stimulus", wait_for_speller=60.0):
+    def __init__(self, name="stimulus", role="stimulus", wait_for_speller=60.0, keyboard=None, layout=None):
         self.name = name
         self.role = role
+        self.keyboard = None
+        if keyboard is not None:
+            symbols = list(keyboard)
+            if layout is None:
+                raise ValueError("give layout=(rows, columns) together with keyboard")
+            rows, cols = int(layout[0]), int(layout[1])
+            if len(set(symbols)) != len(symbols) or rows * cols < len(symbols):
+                raise ValueError("keyboard symbols must be distinct and fit into rows x columns")
+            self.keyboard = {"symbols": symbols, "layout": [rows, cols]}
         uid = "%s-%d" % (name, int(time.time() * 1000))
         stim = pylsl.StreamInfo(STIMULI_STREAM, "Markers", 1, pylsl.IRREGULAR_RATE,
                                 pylsl.cf_string, "stim-" + uid)
@@ -106,6 +116,8 @@ class SpellerLink:
             self._stim.wait_for_consumers(10.0)
             if self._lik is not None:
                 self._lik.wait_for_consumers(10.0)
+            if self.keyboard is not None:
+                self.send_keyboard()
 
     # ------------------------------------------------------------ connection
     def _connect(self, timeout):
@@ -166,6 +178,11 @@ class SpellerLink:
         msg = {"epoch": self._epoch_id(epoch), "flash": list(symbols)}
         self._stim.push_sample([json.dumps(msg, ensure_ascii=False)], timestamp)
         return timestamp
+
+    def send_keyboard(self):
+        """Tell the speller which keyboard this module shows (sent once after connecting)."""
+        msg = {"event": "keyboard", **self.keyboard}
+        self._stim.push_sample([json.dumps(msg, ensure_ascii=False)], pylsl.local_clock())
 
     def done(self, epoch=None):
         """Tell the speller that presentation of this epoch is finished."""

@@ -1,9 +1,9 @@
 """Кружки по эллипсам: стимул — начало движения кружка буквы (контракт speller-link@1).
 
 Места, где модуль общается со спеллером, помечены «SPELLER-LINK», как в модуле движения букв:
-буквы и раскладка от спеллера, эпохи по команде спеллера, link.flash([буква]) сразу
+клавиатура из settings.json, эпохи по команде спеллера, link.flash([буква]) сразу
 после flip кадра, в котором кружок начал движение, конец эпохи — когда каждый кружок
-сделал num_samples движений или пришёл stop, подсказка — только если есть epoch.cue.
+сделал num_samples движений или пришёл stop, подсказка — из sentence в settings.json.
 
 Расположение эллипсов рассчитано на 11 столбцов; при другой раскладке кружки
 двигаются, но геометрия хуже.
@@ -16,7 +16,7 @@ from datetime import datetime
 import numpy as np
 import pygame
 
-from module_tools import AsyncKeyboardDecoder, color, log_path, place_window
+from module_tools import AsyncKeyboardDecoder, color, cue_for, log_path, place_window
 
 
 class Experiment:
@@ -241,7 +241,7 @@ class Experiment:
 
     def perform(self, epoch):
 
-        cue = epoch.cue
+        cue = cue_for(self.data_config, epoch.text, epoch.symbols)   # IMPROV[Q-42]
         self.f.write(f'epoch {epoch.id} cue {cue}\n')
 
         def static(highlight_char=None, col=None):

@@ -124,6 +124,7 @@ runs/
 | `epoch_stop_requested` | Presentation Method | `confidence`, `threshold`, `updates`, `flashes`, `elapsed_s` — модулю отправлен `stop` |
 | `epoch_aborted` | One Epoch | `reason` — эпоха прервана (нет данных, таймаут, завершение сессии) |
 | `epoch_timeline` | One Epoch | моменты шагов эпохи по LSL и в мс от старта эпохи (раздел 13) |
+| `keyboard_set` | Presentation Method | `module`, `symbols`, `layout` — клавиатура, которую объявил модуль стимуляции; `task_characters_missing` — символы задания, которых на ней нет (раздел 12) |
 
 ### 6.3 Языковая часть и слияние
 
@@ -232,6 +233,7 @@ runs/
 | `epoch_stop_requested` | Presentation Method | `confidence`, `threshold`, `updates`, `flashes`, `elapsed_s` — отправлен сигнал `stop` (MA-34) |
 | `posterior_computed` | Statistical Inference | `decided_on`: `final_likelihood` \| `stop_grace_elapsed` \| `done_grace_elapsed` \| `timeout` |
 | `presentation_feedback` | Influence on presentation method | `sent: "result"` — модулю отправлен выбранный символ |
+| `keyboard_set` | Presentation Method | модуль объявил клавиатуру; с этой эпохи репертуар и `repertoire` в `session.json` — его. Если модуль клавиатуру не объявил, остаётся клавиатура профиля и пишется `warning` |
 | `warning` | EEG / EOG source | отклонённое сообщение декодера с причиной |
 
 Сырой сигнал ЭЭГ спеллер не получает и не записывает: это делает ПО усилителя или рекордер LSL (например, LabRecorder), записывающий все потоки `Speller*` вместе с ЭЭГ в XDF.
@@ -244,8 +246,7 @@ runs/
 
 | Тип | Новые поля |
 |---|---|
-| `session_started` | `keyboard` (символы и раскладка), `lsl_clock_at_t0_s` (привязка `t_ns` к LSL), `passport` (что выбрано в окне оператора) |
-| `epoch_started` | `cue_sent` — символ-подсказка, отправленный модулю, или `null` (Q-42) |
+| `session_started` | `keyboard` (символы и раскладка профиля до `keyboard_set`), `lsl_clock_at_t0_s` (привязка `t_ns` к LSL), `passport` (что выбрано в окне оператора) |
 | `stimulus_event` | `recv_lsl_s` — когда метка дошла до спеллера; `unknown_symbols` — символы, которых нет на клавиатуре |
 | `physiology_observation` | `raw` — значения как прислал модуль; `sent_lsl_s` / `recv_lsl_s` — время отправки и прихода по LSL; `transport_delay_ms` |
 | `epoch_timeline` | `lsl_s`: моменты шагов эпохи по LSL; `since_epoch_start_ms`: то же в мс от старта эпохи. Шаги: `prior_ready`, `first_flash`, `last_flash`, `first_likelihood_sent`/`_recv`, `final_likelihood_sent`/`_recv`, `stop_sent`, `done_recv`, `decided`, `result_sent`; также `flashes` и `updates` |
@@ -253,10 +254,9 @@ runs/
 | `symbol_decided` | `typed` — символ, который записан в текст (Ё → е, `_` → пробел) |
 | `correction_requested` | `alternatives` — top-K апостериорных букв для каждой буквы окна, если они передаются в БЯМ |
 | `correction_completed` | `messages` — точный запрос к БЯМ; `reply` — ответ как есть; `queued_ms` — ожидание в очереди |
-| `command_issued` (`start_stimulus_program`) | `settings` — параметры модуля, с которыми он запущен |
+| `command_issued` (`start_stimulus_program`) | `settings` — содержимое `settings.json` модуля на момент запуска |
 
 **Новые файлы в каталоге сессии:**
-- `external/stimulus_settings.json` — параметры модуля с правками оператора;
 - `external/slow_llm_prompt.txt` — промпт медленной БЯМ на эту сессию;
 - `external/module_run/` — рабочая папка модуля стимуляции, там его собственные логи (например `logs/…`);
 - `config.yaml` — также содержит текст промпта (`slow_llm.prompt_text`). Ключи API не пишутся никуда.

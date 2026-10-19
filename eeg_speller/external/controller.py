@@ -2,7 +2,8 @@
 
 Per epoch the core:
 1. computes the language prior and sends ``epoch_start`` (keyboard symbols and layout,
-   typed text, suggested timing and, in copy-spelling mode only, the ``cue``);
+   typed text, suggested timing). The keyboard is the one the stimulus module announced
+   when it connected (``{"event": "keyboard"}``); without it the profile's keyboard is used;
 2. logs every flash marker it receives, but never draws or schedules stimuli itself;
 3. fuses every likelihood update from a decoder with the prior (plugin from inference/);
 4. sends ``stop`` once the posterior confidence reaches ``external.stop_confidence``
@@ -27,7 +28,7 @@ import numpy as np
 
 from eeg_speller.core.clock import Clock
 from eeg_speller.core.distributions import Repertoire, SymbolDistribution, log_probs, normalize_logits
-from eeg_speller.core.keyboard import BACKSPACE, symbol_for_char, typed_char
+from eeg_speller.core.keyboard import BACKSPACE, typed_char, validate_keyboard
 from eeg_speller.decoding.detector import SymbolDetector
 from eeg_speller.epoch.plugins import PluginFusion
 from eeg_speller.external.transport import Incoming, LSLTransport, PROTOCOL
@@ -53,7 +54,7 @@ DEFAULTS = {
     "epoch_timeout_s": 120.0,
     "wait_modules_s": 60.0,           # before the first epoch: wait for a listening module
     "send_text": True,                # include typed text in epoch_start / result
-    "send_cue": False,                # copy-spelling: tell the module which symbol to attend
+    "keyboard_wait_s": 5.0,           # after a module connects: wait for its keyboard
     "top_k_display": 4,
 }
 
@@ -103,11 +104,11 @@ class ExternalSession:
         self.opts = {**DEFAULTS, **(getattr(cfg, "external", None) or {})}
         self.rep = Repertoire(tuple(cfg.repertoire["symbols"]), tuple(cfg.repertoire["layout"]))
         self.typed = {s: typed_char(s) for s in self.rep.symbols}
-        typeable = {c for s, c in self.typed.items() if s != BACKSPACE}
-        if len(target) > 200 or any(ch not in typeable for ch in target):
-            bad = sorted({ch for ch in target if ch not in typeable})
-            raise ValueError(f"target must contain at most 200 characters of the keyboard; missing: {bad[:8]}")
+        if len(target) > 200:
+            raise ValueError("target must contain at most 200 characters")
         self.target = target
+        self.keyboard_source = "profile"
+        self.pending_keyboard = None
         self.primary, self.secondary = PrimaryText(), SecondaryText()
         self.char_post: list[np.ndarray | None] = []      # posterior of every typed character
         self.detector = SymbolDetector(cfg.detector, self.rep)
@@ -169,6 +170,7 @@ class ExternalSession:
         self.correction_queue: "queue.Queue" = queue.Queue()
         self.correction_thread = threading.Thread(target=self._correction_worker, daemon=True)
         self.thread = threading.Thread(target=self._run, daemon=True)
+        self.passport.setdefault("keyboard", f"{self.rep.layout[0]}×{self.rep.layout[1]} (профиль)")
 
     # ---------------------------------------------------------------- public
     def start(self) -> "ExternalSession":
@@ -241,7 +243,19 @@ class ExternalSession:
             if time.monotonic() > deadline:
                 raise TimeoutError("no stimulus module connected to SpellerControl")
             self._drain(0.1)
-        time.sleep(0.3)                 # let the module subscribe before the first command
+        # The module announces its keyboard right after connecting; wait for it a little.
+        until = time.monotonic() + float(self.opts["keyboard_wait_s"])
+        while self.keyboard_source == "profile" and self.pending_keyboard is None and time.monotonic() < until:
+            if self.stop_requested:
+                return
+            self._drain(0.05)
+        if self.keyboard_source == "profile" and self.pending_keyboard is None:
+            with self.lock:
+                self.rec.emit("Presentation Method", "warning",
+                              {"module": "external", "message": "the module did not announce a keyboard: "
+                                                                "the profile keyboard is used"}, None)
+        self._apply_pending_keyboard()
+        time.sleep(0.3)               # let the module subscribe before the first command
 
     def _drain(self, timeout: float) -> list[Incoming]:
         """Read incoming messages; log flashes; return likelihoods/done for any epoch."""
@@ -250,9 +264,50 @@ class ExternalSession:
         for item in items:
             if item.kind == "stimuli" and "flash" in item.msg:
                 self._log_flash(item)
+            elif item.kind == "stimuli" and item.msg.get("event") == "keyboard":
+                self._receive_keyboard(item)
             else:
                 out.append(item)
         return out
+
+    # -------------------------------------------------------------- keyboard
+    def _receive_keyboard(self, item: Incoming):
+        # IMPROV[Q-38]
+        symbols, layout = item.msg.get("symbols"), item.msg.get("layout")
+        try:
+            validate_keyboard(symbols, layout or [0, 0])
+        except (ValueError, TypeError) as exc:
+            with self.lock:
+                self.rec.emit("Presentation Method", "warning",
+                              {"module": item.module, "message": f"rejected keyboard: {exc}"}, None)
+            return
+        self.pending_keyboard = (tuple(symbols), (int(layout[0]), int(layout[1])), item.module)
+        if self.phase != "presenting":
+            self._apply_pending_keyboard()
+
+    def _apply_pending_keyboard(self):
+        """Switch to the module's keyboard between epochs."""
+        if self.pending_keyboard is None:
+            return
+        symbols, layout, module = self.pending_keyboard
+        self.pending_keyboard = None
+        with self.lock:
+            self.rep = Repertoire(symbols, layout)
+            self.typed = {s: typed_char(s) for s in symbols}
+            self.detector = SymbolDetector(self.cfg.detector, self.rep)
+            self.keyboard_source = module
+            self.passport["keyboard"] = f"{layout[0]}×{layout[1]} ({module})"
+            self.storage.manifest["repertoire"] = list(symbols)
+            typeable = {c for s, c in self.typed.items() if s != BACKSPACE}
+            missing = sorted({ch for ch in self.target if ch not in typeable})
+            self.rec.emit("Presentation Method", "keyboard_set",
+                          {"module": module, "symbols": list(symbols), "layout": list(layout),
+                           "task_characters_missing": missing}, None)
+            if missing:
+                self.rec.emit("Presentation Method", "warning",
+                              {"module": module, "message": f"the task has characters missing on the keyboard: {missing}"},
+                              None)
+        self._bump()
 
     # ----------------------------------------------------------------- epoch
     def _prior(self) -> tuple[SymbolDistribution, float, list, float]:
@@ -273,14 +328,13 @@ class ExternalSession:
         return self.target[self.target_index] if self.target and self.target_index < len(self.target) else None
 
     def _run_epoch(self):
+        self._apply_pending_keyboard()
         eid, position = self.epoch_id, len(self.primary.value)
         t_epoch = self.transport.now()
         prior, prior_ms, words, words_ms = self._prior()
         settings = {"paradigm": self.cfg.stimulus["paradigm"], "flash_ms": self.cfg.stimulus["flash_ms"],
                     "isi_ms": self.cfg.stimulus["isi_ms"], "n_repetitions": self.cfg.epoch["n_repetitions"]}
         target_char = self._target_char()
-        # IMPROV[Q-42]
-        cue = symbol_for_char(target_char, self.rep.symbols) if (self.opts["send_cue"] and target_char) else None
         with self.lock:
             if self.started_wall is None:
                 self.started_wall = time.monotonic()
@@ -288,7 +342,7 @@ class ExternalSession:
                           {"position": position,
                            "repertoire_hash": hashlib.sha256("".join(self.rep.symbols).encode()).hexdigest(),
                            "paradigm": "external", **settings, "pause_ms": self.cfg.stimulus["pause_ms"],
-                           "retry_idx": self.retry, "target_symbol": target_char, "cue_sent": cue,
+                           "retry_idx": self.retry, "target_symbol": target_char,
                            "stop_confidence": self.opts["stop_confidence"]}, eid)
             self.rec.emit("Source Model (Fast LLM)", "prior_computed",
                           {"model_id": self.fast.model_id if self.fast else "uniform",
@@ -312,8 +366,7 @@ class ExternalSession:
                                          "decided_lsl": None, "result_sent_lsl": None}}
             self.phase = "presenting"
             msg = {"cmd": "epoch_start", "protocol": PROTOCOL, "epoch": eid,
-                   "symbols": list(self.rep.symbols), "layout": list(self.rep.layout), "settings": settings,
-                   "cue": cue}
+                   "symbols": list(self.rep.symbols), "layout": list(self.rep.layout), "settings": settings}
             if self.opts["send_text"]:
                 msg["text"] = self.primary.value
             self.transport.send(msg)
@@ -492,6 +545,7 @@ class ExternalSession:
             correct = None if target is None or symbol is None else self.typed[symbol] == target
             self.log.append({"epoch_id": eid, "position": position, "target": target, "decided": symbol,
                              "typed": self.typed.get(symbol) if symbol else None,
+                             "top": self._top(post.log_p, int(self.opts["top_k_display"])),
                              "confidence": round(decision.confidence, 4), "uncertain": bool(uncertain),
                              "correct": correct, "flashes": cur["flashes"], "updates": cur["updates"],
                              "stopped_early": cur["stop_sent"], "decided_on": why,
@@ -616,7 +670,8 @@ class ExternalSession:
                                "messages": getattr(self.slow, "last_messages", None),
                                "reply": getattr(self.slow, "last_reply", None)}, epoch_id)
                 changed = accepted and list(result) != list(req.words)
-                self.corrections.append({"correction_id": req.correction_id, "words_in": list(req.words),
+                self.corrections.append({"correction_id": req.correction_id, "epoch_id": epoch_id,
+                                         "words_in": list(req.words),
                                          "words_out": list(result), "accepted": accepted, "changed": changed,
                                          "reason": reason, "latency_ms": round(latency),
                                          "t_s": round(time.monotonic() - (self.started_wall or time.monotonic()), 1)})

@@ -1,11 +1,33 @@
 {
+    "alphabet": "1234567890_ЙЦУКЕНГШЩЗХФЫВАПРОЛДЖЭЁЯЧСМИТЬБЮЪ",
+    "num_rows": 4,
+    "num_cols": 11,
+    "sentence": "",
+    "space_instead_of_eeg": true,
+    "fullscreen": false,
     "FPS": 60,
     "font_name": "Arial",
     "font_size": 100,
-    "background": [255, 255, 255],
-    "letter_color": [0, 0, 0],
-    "cue_color": [200, 40, 40],
-    "grid_color": [100, 100, 100],
+    "background": [
+        255,
+        255,
+        255
+    ],
+    "letter_color": [
+        0,
+        0,
+        0
+    ],
+    "cue_color": [
+        200,
+        40,
+        40
+    ],
+    "grid_color": [
+        100,
+        100,
+        100
+    ],
     "t0_mean": 2,
     "t1_a": 1,
     "t1_b": 3,
