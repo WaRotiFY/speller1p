@@ -30,6 +30,7 @@ The LSL timestamp of a ``flash`` sample is the moment of the flip in the LSL clo
 of the stimulus computer. The speller never looks at the screen.
 """
 import json
+import sys
 import threading
 import time
 
@@ -130,11 +131,22 @@ class SpellerLink:
         threading.Thread(target=self._listen, daemon=True).start()
 
     def _listen(self):
+        errors = 0
         while not self._closing.is_set():
             try:
                 sample, _ = self._inlet.pull_sample(timeout=0.1)
-            except Exception:           # lost stream: behave as if the session ended
-                sample = None
+                errors = 0
+            except Exception as exc:
+                # A single read error is not the end of the session: LSL reconnects by itself.
+                errors += 1
+                if errors == 1:
+                    print("speller_link: control stream read error (%s: %s), retrying"
+                          % (type(exc).__name__, exc), file=sys.stderr, flush=True)
+                if errors < 50:         # about 10 s
+                    time.sleep(0.2)
+                    continue
+                print("speller_link: control stream lost for 10 s, treating the session as ended",
+                      file=sys.stderr, flush=True)
                 with self._lock:
                     self._ended = True
                     self._new_epoch.notify_all()
@@ -162,6 +174,8 @@ class SpellerLink:
             elif cmd == "resume":
                 self._paused = False
             elif cmd == "end":
+                print("speller_link: the speller ended the session (%s)" % msg.get("reason", "?"),
+                      file=sys.stderr, flush=True)
                 self._ended = True
                 self._new_epoch.notify_all()
 

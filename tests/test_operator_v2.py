@@ -95,7 +95,10 @@ class FakeChat(BaseHTTPRequestHandler):
         req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         FakeChat.calls.append(req)
         words = req["messages"][1]["content"].split("Слова (")[1].split("): ")[1].split("\n")[0].split()
-        body = json.dumps({"choices": [{"message": {"content": "Ответ: " + " ".join(w.replace("пдед", "плед") for w in words)}}]}).encode()
+        if words == ["думаю"]:          # a reasoning model that spent the whole limit on thinking
+            body = json.dumps({"choices": [{"message": {"content": None}, "finish_reason": "length"}]}).encode()
+        else:
+            body = json.dumps({"choices": [{"message": {"content": "Ответ: " + " ".join(w.replace("пдед", "плед") for w in words)}}]}).encode()
         self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
     def log_message(self, *a):
@@ -119,6 +122,9 @@ def test_chat_api_prompt_alternatives_and_remote_guard(fake_api, monkeypatch, tm
     assert out == ["дай", "плед"]
     msg = FakeChat.calls[-1]["messages"][1]["content"]
     assert "пдед: п[п 90] д[д 46 л 41]" in msg and "Контекст: мне холодно," in msg
+    assert FakeChat.calls[-1]["max_tokens"] >= 1024              # room for reasoning models
+    with pytest.raises(ValueError, match="finish_reason=length"):
+        model.correct("", ["думаю"])
     assert chat_api.list_models("custom", fake_api) == ["a:free", "b"]
     with pytest.raises(PermissionError):
         chat_api.ChatCorrection({"provider": "openrouter", "model_id": "x:free"}, allow_remote=False)

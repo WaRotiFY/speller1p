@@ -30,7 +30,7 @@ def export(path):
             rows = []
             for session in sessions:
                 table = session / "tables" / "epochs.csv"
-                with table.open(encoding="utf-8", newline="") as fh:
+                with table.open(encoding="utf-8-sig", newline="") as fh:
                     rows.extend(csv.DictReader(fh))
             if rows:
                 import io

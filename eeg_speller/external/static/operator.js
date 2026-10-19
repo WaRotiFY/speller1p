@@ -183,7 +183,8 @@ function providerChanged(fromUser) {
   $("key-row").classList.toggle("hidden", !p.needs_key);
   $("base-url-row").classList.toggle("hidden", p.id !== "custom");
   $("api-key").placeholder = p.has_key ? "ключ сохранён — можно заменить" : "вставьте ключ";
-  const model = (saved.slowModels || {})[p.id] || (fromUser ? "" : saved.slowModel) || p.suggested;
+  // A model name belongs to its provider: never carry one over to another provider.
+  const model = (saved.slowModels || {})[p.id] || (saved.provider === p.id ? saved.slowModel : "") || p.suggested;
   $("slow-model").value = model || "";
   $("slow-models").textContent = "";
   txt($("models-info"), "");

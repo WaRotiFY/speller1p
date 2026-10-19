@@ -114,7 +114,9 @@ def _request(url: str, key: str | None, payload: dict | None = None, timeout: fl
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "replace")[:300]
-        raise ValueError(f"HTTP {exc.code} from {urlparse(url).hostname}: {body}") from exc
+        hint = {401: " — неверный ключ", 403: " — доступ запрещён: возможно, провайдер недоступен из вашей страны",
+                429: " — исчерпан лимит запросов"}.get(exc.code, "")
+        raise ValueError(f"HTTP {exc.code} from {urlparse(url).hostname}{hint}: {body}") from exc
     except (urllib.error.URLError, OSError) as exc:
         raise ValueError(f"no connection to {urlparse(url).hostname}: {exc}") from exc
 
@@ -222,7 +224,7 @@ class ChatCorrection:
         self.remote = is_remote(self.base_url)
         if self.remote and not allow_remote:
             raise PermissionError("cloud correction sends the typed text to a third party: "
-                                  "enable 'allow sending text to the cloud' first")
+                                  "not allowed by this profile (llm.allow_remote: false)")
         self.model_id = str(cfg.get("model_id") or "").strip()
         if not self.model_id:
             raise ValueError("choose a model for the slow LLM")
@@ -242,7 +244,8 @@ class ChatCorrection:
         # ASSUMPTION[MA-20]
         messages = build_messages(self.template, left_context, window, letters)
         payload = {"model": self.model_id, "temperature": float(self.cfg.get("temperature", 0)),
-                   "max_tokens": int(self.cfg.get("max_tokens", 24 * len(window) + 32)), "stream": False,
+                   # Reasoning models (gpt-oss, deepseek-r1, qwen3…) spend tokens on thinking before the answer.
+                   "max_tokens": int(self.cfg.get("max_tokens") or max(1024, 24 * len(window) + 32)), "stream": False,
                    "messages": messages}
         self.last_messages = messages
         for attempt in range(2):
@@ -254,6 +257,12 @@ class ChatCorrection:
                 if attempt or "HTTP 429" not in str(exc):
                     raise
                 time.sleep(2.0)
-        content = reply["choices"][0]["message"].get("content") or ""
+        choice = reply["choices"][0]
+        content = choice["message"].get("content") or ""
         self.last_reply = content
+        if not content.strip():
+            why = choice.get("finish_reason")
+            raise ValueError("empty reply" + (" (finish_reason=length: the model used the whole token limit, "
+                                              "probably on reasoning; raise slow_llm.max_tokens or pick another model)"
+                                              if why == "length" else f" (finish_reason={why})"))
         return parse_words(content)

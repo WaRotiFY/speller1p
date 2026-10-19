@@ -13,6 +13,7 @@
 7. подсказка (целевая буква) берётся из sentence в settings.json, если он задан.
 """
 import math
+import sys
 import os
 import random
 from datetime import datetime
@@ -135,6 +136,9 @@ class Experiment:
         pressed = False
         for event in pygame.event.get():
             if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                if not self.quit:
+                    print("module: " + ("window closed" if event.type == pygame.QUIT else "Esc pressed"),
+                          file=sys.stderr, flush=True)
                 self.quit = True
             if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
                 pressed = True

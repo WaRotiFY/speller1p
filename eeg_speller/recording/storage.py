@@ -109,7 +109,8 @@ def build_tables(session_dir):
 
 def write_csv(path, rows):
     fields = sorted({key for row in rows for key in row})
-    with path.open("w", encoding="utf-8", newline="") as fh:
+    # utf-8 with BOM: Excel on Windows otherwise reads Cyrillic as cp1251.
+    with path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
         for row in rows:

@@ -7,6 +7,7 @@
 """
 import os
 import random
+import sys
 import time
 
 import pygame
@@ -76,6 +77,9 @@ def main():
         pressed = False
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+                if not state["quit"]:
+                    print("module: " + ("window closed" if ev.type == pygame.QUIT else "Esc pressed"),
+                          file=sys.stderr, flush=True)
                 state["quit"] = True
             if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
                 pressed = True
