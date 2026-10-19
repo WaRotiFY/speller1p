@@ -98,7 +98,7 @@ class ExternalSession:
     """One typing session driven by external modules."""
 
     def __init__(self, cfg, target: str, output_root: Path, *, transport=None, model_factory=None,
-                 profile: str = "", passport: dict | None = None):
+                 profile: str = "", passport: dict | None = None, replay_of: str | None = None):
         self.cfg = cfg
         self.profile = profile
         self.opts = {**DEFAULTS, **(getattr(cfg, "external", None) or {})}
@@ -131,7 +131,8 @@ class ExternalSession:
                   "inference": {"plugin": self.fusion.name, "params": self.fusion.values,
                                 "source_hash": self.fusion.plugin.source_hash},
                   "physiology": {"backend": "external", "model_id": PROTOCOL}}
-        self.storage = SessionStorage(output_root, cfg, self.rep, models)
+        self.storage = SessionStorage(output_root, cfg, self.rep, models, replay_of=replay_of)
+        self.storage.manifest["clock"]["kind"] = "monotonic"      # also in a replay: real time
         self.session_id = self.storage.session_id
         self.transport = transport or LSLTransport(self.session_id)
         self.clock = Clock(live=True)
@@ -139,7 +140,7 @@ class ExternalSession:
         self.passport = passport or {}
         self.rec = SessionRecorder(self.storage.directory, self.session_id, cfg.participant_id, self.clock)
         self.rec.emit("Session Recorder", "session_started",
-                      {"run_mode": "live", "llm_mode": cfg.mode["llm"], "paradigm": "external",
+                      {"run_mode": "replay" if replay_of else "live", "replay_of": replay_of, "llm_mode": cfg.mode["llm"], "paradigm": "external",
                        "seed": cfg.seed, "config_hash": cfg.digest(), "protocol": PROTOCOL,
                        "keyboard": {"symbols": list(self.rep.symbols), "layout": list(self.rep.layout)},
                        "lsl_clock_at_t0_s": _round(self.transport.now()), "passport": self.passport})

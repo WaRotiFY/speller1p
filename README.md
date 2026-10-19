@@ -198,7 +198,7 @@ checksums.sha256
 |---|---|
 | `uv run --no-sync python -m eeg_speller run --config configs/default.yaml` | одна симулированная сессия: виртуальный участник набирает задание |
 | `uv run --no-sync python -m eeg_speller experiment --config configs/compare_llm.yaml` | серия виртуальных участников с БЯМ и без; среднее, дисперсия, 95 % ДИ |
-| `uv run --no-sync python -m eeg_speller replay runs/<сессия>` | переиграть записанную сессию с другими языковыми настройками: ЭЭГ из записи, остальное пересчитывается |
+| `uv run --no-sync python -m eeg_speller replay runs/external/<сессия>` | переиграть записанную сессию: стимулы и правдоподобие ЭЭГ берутся из записи, языковые модели, слияние, остановка, решение и коррекция пересчитываются. `--llm off` — без БЯМ; `--config изменения.yaml` — частичный YAML поверх настроек сессии, например `external: {stop_confidence: 0.9}`. Печатает сравнение с исходной сессией и пишет новую сессию с `replay_of` |
 | `uv run --no-sync python -m eeg_speller export runs/<сессия>` | упаковать сессию в ZIP с проверкой полноты |
 | `uv run --no-sync python -m eeg_speller bench-llm --config configs/exp01.yaml` | качество быстрой модели на заданиях |
 | `uv run --no-sync python scripts/compare_fast_lm.py ngram kenlm` | сравнить быстрые модели: бит на символ, точность буквы, топ-N слов, задержка |

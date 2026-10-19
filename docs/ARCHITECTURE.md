@@ -84,7 +84,7 @@ class FastLanguageModel(Protocol):
 | Режим | Что это | Команда |
 |---|---|---|
 | симуляция | виртуальный участник и симулированная ЭЭГ с заданным качеством сигнала (`physiology.sim.d_prime`), виртуальное время | `python -m eeg_speller run`, `experiment` |
-| переигрывание | ЭЭГ-наблюдения берутся из записанной сессии, языковая часть, слияние и решение пересчитываются с другим конфигом | `python -m eeg_speller replay <сессия>` |
+| переигрывание | стимулы и правдоподобие ЭЭГ эпохи k берутся из эпохи k записанной сессии (на той клавиатуре, что объявил модуль) и проигрываются тому же контроллеру, что в живой сессии; языковая часть, слияние, досрочная остановка и решение пересчитываются. Более ранний стоп учитывается: полученные к нему данные становятся окончательными | `python -m eeg_speller replay <сессия> [--config изменения.yaml] [--llm off]` (`recording/replay_external.py`) |
 
 ## Пакет `eeg_speller`
 
@@ -97,7 +97,7 @@ llm/          fast.py, slow.py, char_marginal.py
 epoch/        plugins.py (статистический вывод), loop.py и fusion.py (симуляция), presentation_feedback.py
 decoding/     detector.py
 text/         primary.py, secondary.py, normalize.py
-recording/    recorder.py, storage.py, export.py, replay.py
+recording/    recorder.py, storage.py, export.py, replay.py (симуляция), replay_external.py (окно оператора)
 physiology/   base.py (типы), simulated.py, p300.py, sources.py, edf_demo.py, calibrate.py, stimuli.py
 evaluation/   metrics.py, stats.py, experiment.py, bench.py
 ext/          word_prediction.py, ui_console.py, tts.py, commands.py

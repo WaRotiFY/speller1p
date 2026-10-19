@@ -10,6 +10,7 @@ from eeg_speller.evaluation.experiment import experiment
 from eeg_speller.evaluation.metrics import save_session_metrics
 from eeg_speller.recording.export import export
 from eeg_speller.recording.replay import ReplayPhysiology
+from eeg_speller.recording.replay_external import is_external, replay_external
 
 
 def main():
@@ -23,13 +24,19 @@ def main():
             p.add_argument("--verbose", action="store_true")
     p = sub.add_parser("replay")
     p.add_argument("session_dir")
-    p.add_argument("--config", default=None)
+    p.add_argument("--config", default=None,
+                   help="simulated session: a full profile; operator-window session: changes merged over its config")
+    p.add_argument("--llm", choices=["on", "off"], help="operator-window session: with or without language models")
     p.add_argument("--output", default="runs")
     p = sub.add_parser("export")
     p.add_argument("path")
     args = parser.parse_args()
     if args.command == "export":
         print(export(args.path))
+        return
+    if args.command == "replay" and is_external(Path(args.session_dir)):
+        result = replay_external(args.session_dir, args.output, args.config, args.llm)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return
     if args.command == "replay":
         source = ReplayPhysiology(args.session_dir)

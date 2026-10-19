@@ -325,3 +325,41 @@ def test_word_kenlm_gives_letters_and_words(tmp_path):
     assert odd.sum() == pytest.approx(1.0) and np.all(odd > 0)
     rep = Repertoire(tuple(PRESETS["abc_6x6"]["symbols"]))
     assert model.predict("мне нужно выпить в", rep).log_p.shape == (36,)
+
+
+# ---------------------------------------------------------------- replay
+def test_replay_of_operator_session_reuses_recorded_evidence(tmp_path):
+    from eeg_speller.recording.replay_external import is_external, replay_external
+    cfg, passport = build_session_config({"slow": {"backend": "off"}})
+    cfg = cfg.model_copy(update={"run_mode": "live"})
+    kb = PRESETS["jcuken_4x10"]
+    tr = MemoryTransport()
+    tr.deliver("stimuli", {"event": "keyboard", "symbols": kb["symbols"], "layout": list(kb["layout"])})
+    target = "дом мир"
+
+    def module(msg):
+        if msg["cmd"] != "epoch_start":
+            return
+        k = sum(1 for m in tr.sent if m["cmd"] == "result" and m.get("symbol"))
+        sym = next(s for s in msg["symbols"] if typed_char(s) == target[min(k, len(target) - 1)])
+        for i, group in enumerate([[sym], [s for s in msg["symbols"] if s != sym][:5]]):
+            tr.deliver("stimuli", {"epoch": msg["epoch"], "flash": group})
+        rest = (1 - 0.6) / (len(msg["symbols"]) - 1)
+        p = {s: (0.6 if s == sym else rest) for s in msg["symbols"]}
+        tr.deliver("likelihood", {"epoch": msg["epoch"], "p": p, "final": False})
+        tr.deliver("likelihood", {"epoch": msg["epoch"], "p": p, "final": True})
+
+    tr.listeners.append(module)
+    live = ExternalSession(cfg, target, tmp_path / "live", transport=tr, passport=passport).start()
+    assert live.wait_finished(60) and live.monitor()["text"] == target
+    src = live.storage.directory
+    assert is_external(src)
+
+    same = replay_external(src, tmp_path / "replay")
+    assert same["error"] is None and same["replay"]["text"] == target
+    assert same["replay"]["epochs"] == same["original"]["epochs"] == len(target)
+    manifest = json.loads((Path(same["session"]) / "session.json").read_text(encoding="utf-8"))
+    assert manifest["replay_of"] == src.name and manifest["run_mode"] == "replay"
+    assert manifest["repertoire"] == list(kb["symbols"])          # the module's keyboard, not the profile's
+    off = replay_external(src, tmp_path / "replay", llm="off")
+    assert off["error"] is None and off["replay"]["epochs"] == len(target)
