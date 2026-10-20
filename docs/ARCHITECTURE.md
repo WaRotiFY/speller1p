@@ -2,6 +2,62 @@
 
 Спеллер состоит из нескольких процессов, которые общаются через LSL, и ядра на Python со сменными частями.
 
+## Общая схема
+
+Как данные проходят через спеллер: быстрая БЯМ даёт априорное распределение, внутри эпохи модуль физиологии показывает стимулы и присылает распределение по ЭЭГ, статистический вывод объединяет их, детектор выбирает символ, медленная БЯМ исправляет набранный текст. Обучение по исправленному тексту заложено в схему и пока не используется. Исходная схема (английские подписи) — [в редакторе mermaid.live](https://mermaid.live/edit#pako:eNqVVd1u6jgQfpWRqyNRCTgk_EfqSl3g7KlUVNRwtc3RyiQTsJrYkeOo5VAeYZ9hL_f19hHWdggEyl4sEgjbM99834xnvCOhiJB4pNVqBTLgoeAxW3vmL0CciLdwQ6U6rAEijGmRqGfkEUqUHgQEk9eAmHPzPaAcHWH5a3Vk3L98gbu7O5hTxi04NBKMFSgBkq036tacVraL5W4XkIVkKZVbWOK7gkYmMcSI8TVonkpv3QZkv_c8L6KKVo7f_PlLQHxRyBBhrtUl0PhGcwWPj3Nt_0ObG82nONBq_WK86kzzYrWWNNuAv01XU5YrCQZUL0QCds1WhWKCa8DKx3yefd_QfsYMpRJMIogYcuuWQywk5JhgWDp-Ym4-9ws5NQj3kEkmJIOoFsyAcZOJEvEKhC5MLQ9W2VHBVX1PMyPsiSPMMhFuLuREWoFle1HIM4jF3EAsNtuciUSstybpRYIXUDbX8z9SVBsRGXuJOXJFLfrc7n4uTs0xtwXVjrPZb_AVZk_mt91uX3c65KG-9b1IKW8E5J-__v4TvotUgE8zhjzUTG_rhv6DKbVhlisW0gQeeKxvuzW8Fut-IaqSiVzh_y1bHUo3yIO-2JLrqGWDKJGZ_lgJpUR6RvOYTFtlq-6TXHt0TN6Fd7lpTD4CUr_TEEuRwqmgAfnQSTlPkUU2yi8zccDTOUsKkzPQeFm91umh1h8nBRe399ia_vTlNAKq5kOlr6SQ57WoTZiJ4Ly8tDmsUL0hclglInzNK6NTT9v-OCqr6JvANQ7l1vKM2XJimOlyt2IaqiItB9REyKpfGr4p3_WR49vR5qMeYpFR1jj4YXRrca709WFK6bg1CiX9M2LPj2-T5cvUtu1XZqd0qPQuFHk5Ng-BwEzPHydCFso6nyHp7WsXqH5WpurKlPfVNjExazM9TGieTzEGIw1iliTeTdTDKKJNXQ3xit6NO6LDXv-wbL2xSG08N3tvhvomSu_G6feHbu8TnsluhedgGDtHPGdI3dXoP_E6Yb836JAmWUsWEU_JApskRZlSsyQ7EycgaoOpbn7z3EmMiveW9dbPHt9r14zy34VIK28pivWGeDFNcr0qMq0Vp4zqWXkyse_nRBRcEa_rdkcWhHg78k4813Hanb4zdvodZzx2u4Mm2RKv1Rt12oOB4w6G457bHbvucN8kP21cpz3ojdzOYDhwO25v2Ol0m0Q_k7pJ5uXjbt_4_b_tzoQO).
+
+```mermaid
+---
+config:
+  flowchart:
+    defaultRenderer: "elk"
+---
+flowchart TB
+    PT{{"Набранный текст<br/>(контекст)"}}:::data
+    FSM["Быстрая БЯМ"]:::code
+    PT --> FSM
+
+    subgraph SymbDistr ["Распределение символов"]
+        RSS{{"Набор символов<br/>для выбора"}}:::data
+        APrD{{"Априорное распределение<br/>следующего символа"}}:::data
+    end
+    FSM --> SymbDistr
+
+    subgraph OE ["Одна эпоха"]
+        direction TB
+        subgraph PM ["Модуль физиологии"]
+            PM_method["Способ предъявления"]:::code
+            PM_source["ЭЭГ / ЭОГ / …"]:::code
+        end
+        Human("🧍 Человек")
+        SI["Статистический вывод"]:::code
+        APoD{{"Апостериорное распределение<br/>следующего символа"}}:::data
+        PM_method --> Human
+        Human --> PM_source
+        PM_source -->|"распределение от физиологии"| SI
+        SI --> APoD
+        APoD -->|"влияние на предъявление"| PM_method
+    end
+
+    PSD["Выбор символа"]:::code
+    SymbDistr --> SI
+    APoD --> PSD
+    PSD --> PT
+
+    PTC["Исправление текста<br/>(медленная БЯМ)"]:::code
+    ST{{"Исправленный текст"}}:::data
+    PT --> PTC
+    PTC --> ST
+
+    RLwCT["Обучение по исправленному тексту<br/>(прямое / косвенное)"]
+    ST --> RLwCT
+    RLwCT ---> PM_source
+    RLwCT ---> PSD
+
+    classDef data fill:#d4edda,stroke:#28a745,stroke-width:2px,color:#155724
+    classDef code fill:#d1ecf1,stroke:#17a2b8,stroke-width:2px,color:#0c5460
+```
+
 ## Процессы
 
 | Процесс | Что делает | Как запускается |
