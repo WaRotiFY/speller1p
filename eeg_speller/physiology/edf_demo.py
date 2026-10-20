@@ -13,6 +13,7 @@ from scipy.signal import butter, sosfiltfilt
 
 from eeg_speller.core.config import load_config
 from eeg_speller.physiology.p300 import P300Features, CalibratedP300
+from eeg_speller.physiology.edf_io import write_edf
 from eeg_speller.physiology.sources import EDFSource
 from eeg_speller.physiology.stimuli import make_plan
 
@@ -21,7 +22,6 @@ GAINS = np.array([0.35, 0.7, 1.0, 0.9, 0.85, 0.5, 0.45, 0.05])
 
 
 def generate_edf(cfg, text, output, *, signal_seed, amplitude_uv=9.0):
-    import pyedflib
     if not text or any(ch not in cfg.repertoire["symbols"] for ch in text):
         raise ValueError("text must be nonempty and use the speller repertoire")
     fs = 256
@@ -52,19 +52,12 @@ def generate_edf(cfg, text, output, *, signal_seed, amplitude_uv=9.0):
         eeg[:, a:a + len(tau)] += GAINS[:, None] * erp
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    with pyedflib.EdfWriter(str(output), len(CHANNELS), file_type=pyedflib.FILETYPE_EDFPLUS) as writer:
-        writer.set_number_of_annotation_signals(4)
-        writer.setStartdatetime(datetime(2026, 1, 1))
-        writer.setEquipment("SYNTHETIC_P300")
-        writer.setSignalHeaders([{"label": name, "dimension": "uV", "sample_frequency": fs,
-                                  "physical_min": -200, "physical_max": 200,
-                                  "digital_min": -32768, "digital_max": 32767,
-                                  "transducer": "synthetic", "prefilter": "none"} for name in CHANNELS])
-        writer.writeSamples(list(eeg))
-        for onset, eid, flash in events:
-            description = f"speller/{eid}/{flash['id']}/{flash['kind']}/{flash['index']}/{flash['repetition']}"
-            if writer.writeAnnotation(onset, cfg.stimulus["flash_ms"] / 1000, description) != 0:
-                raise ValueError("failed to write EDF stimulus annotation")
+    notes = [(onset, cfg.stimulus["flash_ms"] / 1000,
+              f"speller/{eid}/{flash['id']}/{flash['kind']}/{flash['index']}/{flash['repetition']}")
+             for onset, eid, flash in events]
+    write_edf(output, CHANNELS, fs, eeg, dimension="uV", physical_range=(-200, 200), annotations=notes,
+              startdate=datetime(2026, 1, 1).date(), equipment="SYNTHETIC_P300", transducer="synthetic",
+              prefilter="none")
     return labels
 
 

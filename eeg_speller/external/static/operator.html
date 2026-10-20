@@ -54,6 +54,7 @@
       <div id="fast-kenlm" class="grid hidden">
         <label class="wide">модель (Hugging Face или путь к .arpa / .bin) <input id="kenlm-id" autocomplete="off"></label>
         <label class="check wide"><input type="checkbox" id="kenlm-download"> разрешить скачать</label>
+        <p id="kenlm-missing" class="muted small wide hidden">пакет kenlm не установлен: его нужно собирать компилятором C++ (models/kenlm/README.md). Без него работает 4-грамма.</p>
       </div>
       <div id="fast-hf" class="grid hidden">
         <label class="wide">модель на Hugging Face <input id="hf-model" placeholder="Qwen/Qwen2.5-0.5B" autocomplete="off"></label>

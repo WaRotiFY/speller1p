@@ -4,7 +4,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-pytest.importorskip("pyedflib")
+pytest.importorskip("edfio")
 
 from eeg_speller.core.config import load_config
 from eeg_speller.physiology.base import PhysiologyObservation, validate_observation

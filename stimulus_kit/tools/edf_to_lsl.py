@@ -29,15 +29,20 @@ SCALE_TO_UV = {"uv": 1.0, "µv": 1.0, "μv": 1.0, "mv": 1e3, "v": 1e6, "nv": 1e-
 
 
 def read_edf(path):
-    import pyedflib
-    with pyedflib.EdfReader(path) as r:
-        labels = r.getSignalLabels()
-        rates = {float(r.getSampleFrequency(i)) for i in range(len(labels))}
-        if len(rates) != 1:
-            raise SystemExit("all EDF signals must share one sample rate for this player")
-        data = np.stack([r.readSignal(i) * SCALE_TO_UV.get(r.getPhysicalDimension(i).strip().lower(), 1.0)
-                         for i in range(len(labels))])
-        onsets, _, texts = r.readAnnotations()
+    try:
+        import edfio
+    except ImportError:
+        raise SystemExit("EDF support requires the edfio package: pip install edfio") from None
+    edf = edfio.read_edf(path)
+    sigs = list(edf.signals)
+    labels = [s.label.strip() for s in sigs]
+    rates = {float(s.sampling_frequency) for s in sigs}
+    if len(rates) != 1:
+        raise SystemExit("all EDF signals must share one sample rate for this player")
+    data = np.stack([np.asarray(s.data, dtype=float) * SCALE_TO_UV.get(s.physical_dimension.strip().lower(), 1.0)
+                     for s in sigs])
+    onsets = [float(a.onset) for a in edf.annotations]
+    texts = [str(a.text) for a in edf.annotations]
     markers = []
     for onset, text in zip(onsets, texts):
         parts = text.split("/")

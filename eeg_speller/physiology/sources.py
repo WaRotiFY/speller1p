@@ -9,6 +9,8 @@ from typing import Protocol
 import uuid
 import numpy as np
 
+from eeg_speller.physiology.edf_io import read_edf
+
 
 class EEGSource(Protocol):
     """Transport boundary: physical samples in volts, time expressed in source seconds."""
@@ -44,22 +46,18 @@ class EDFSource:
     kind = "edf_replay"
 
     def __init__(self, cfg, channels):
-        try:
-            import pyedflib
-        except ImportError:
-            raise ValueError("EDF support requires pyedflib: uv pip install -e .") from None
         self.path = Path(cfg["path"]).resolve()
         if not self.path.is_file():
             raise ValueError(f"EDF not found: {self.path}; generate or select a recording")
-        with pyedflib.EdfReader(str(self.path)) as reader:
-            available = reader.getSignalLabels()
-            selected = selected_indices(available, channels, cfg.get("channel_aliases", {}))
-            rates = [float(reader.getSampleFrequency(i)) for i in selected]
-            if max(rates) != min(rates):
-                raise ValueError("selected EDF channels must have the same sample rate")
-            self.fs = rates[0]
-            self.data = np.stack([reader.readSignal(i) * unit_scale(reader.getPhysicalDimension(i)) for i in selected])
-            onsets, _, descriptions = reader.readAnnotations()
+        available, all_rates, dims, signals, notes = read_edf(self.path)
+        selected = selected_indices(available, channels, cfg.get("channel_aliases", {}))
+        rates = [all_rates[i] for i in selected]
+        if max(rates) != min(rates):
+            raise ValueError("selected EDF channels must have the same sample rate")
+        self.fs = rates[0]
+        self.data = np.stack([signals[i] * unit_scale(dims[i]) for i in selected])
+        onsets = [n[0] for n in notes]
+        descriptions = [n[2] for n in notes]
         self.channels = channels
         self.markers = {}
         for onset, description in zip(onsets, descriptions):

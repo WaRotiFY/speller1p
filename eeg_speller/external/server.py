@@ -46,12 +46,15 @@ def _num(value, low, high, name, integer=False):
     return int(value) if integer else float(value)
 
 
-EXTRAS = {"kenlm": "kenlm", "torch": "hf", "transformers": "hf", "pylsl": "", "pygame": "", "pyedflib": ""}
+EXTRAS = {"torch": "hf", "transformers": "hf", "pylsl": "", "pygame": "", "edfio": ""}
 
 
 def install_hint(exc: ImportError) -> str:
     """A missing package -> the exact command that installs it."""
     name = (getattr(exc, "name", None) or "").split(".")[0]
+    if name == "kenlm":
+        return "не установлен пакет kenlm: он собирается компилятором C++, см. models/kenlm/README.md; " \
+               "или выберите буквенную 4-грамму"
     extra = EXTRAS.get(name)
     if extra is None:
         return f"не установлен пакет {name or exc}: pip install {name}".strip()

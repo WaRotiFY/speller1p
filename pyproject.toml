@@ -5,15 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eeg-speller"
 version = "0.2.0"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"   # pygame has no wheels for 3.14 yet
 # Everything needed to run the speller, the stimulation modules and the decoder example.
+# Only prebuilt wheels: no C/C++ compiler is needed on Windows, macOS or Linux.
+# KenLM (word n-gram fast LM) is not installed here: it has to be compiled, see models/kenlm/README.md.
 dependencies = ["numpy>=1.24", "pydantic>=2,<3", "PyYAML>=6", "scipy>=1.11",
-                "pylsl>=1.17,<2", "pygame>=2.5", "pyedflib>=0.1.40,<0.2"]
+                "pylsl>=1.17,<2", "pygame>=2.5", "edfio>=0.4"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pyarrow"]              # tests and Parquet tables
 hf = ["transformers", "torch"]              # neural fast LM from Hugging Face (several GB)
-kenlm = ["kenlm"]                           # word KenLM fast LM; needs a C++ compiler, see models/kenlm/README.md
 # Old names kept so earlier install commands still work.
 test = ["pytest>=8"]
 external = []

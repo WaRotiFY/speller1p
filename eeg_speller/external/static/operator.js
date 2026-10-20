@@ -107,6 +107,7 @@ function restore() {
   $("hf-model").value = s.hfModel || "";
   $("kenlm-id").value = s.kenlmId || init.kenlm.default;
   $("kenlm-download").checked = !!s.kenlmDownload;
+  $("kenlm-missing").classList.toggle("hidden", !!init.kenlm.available);
   $("hf-download").checked = !!s.hfDownload;
   $("hf-device").value = s.hfDevice || "cpu";
   sCtx.set(s.context || "primary");
