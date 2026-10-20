@@ -122,7 +122,7 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
         patch["stimulus"] = {"pause_ms": _num(body["pause_ms"], 500, 5000, "pause", integer=True) // 10 * 10}
 
     slow = body.get("slow") or {}
-    sb = slow.get("backend", "mock_dictionary")
+    sb = slow.get("backend", "dictionary")
     s_patch = {"every_n_words": _num(slow.get("every_n_words", 1), 1, 20, "every N words", integer=True),
                "window_words": _num(slow.get("window_words", 3), 1, 20, "window", integer=True),
                "include_alternatives": bool(slow.get("include_alternatives", True)),
@@ -131,6 +131,9 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
     if sb == "off":
         s_patch["backend"] = "off"
         passport["slow"] = "выкл."
+    elif sb == "dictionary":
+        s_patch.update(backend="dictionary", model_id="dictionary-letters-1", include_alternatives=True)
+        passport["slow"] = "словарь по вариантам букв"
     elif sb == "mock_dictionary":
         s_patch.update(backend="mock_dictionary", model_id="mock-dictionary-1")
         passport["slow"] = "словарь (mock)"

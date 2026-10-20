@@ -83,8 +83,8 @@
 
     <section class="block" id="b-slow">
       <h2><span class="num">4</span>медленная БЯМ</h2>
-      <div class="seg" id="slow-backend" data-value="mock_dictionary">
-        <button data-v="off">выкл.</button><button data-v="mock_dictionary">словарь</button><button data-v="chat_api">БЯМ по API</button>
+      <div class="seg" id="slow-backend" data-value="dictionary">
+        <button data-v="off">выкл.</button><button data-v="dictionary">словарь</button><button data-v="chat_api">БЯМ по API</button>
       </div>
       <div id="slow-api" class="hidden">
         <div class="grid">
@@ -183,7 +183,7 @@
         <h2 id="prompt-title">промпт медленной БЯМ</h2>
         <button id="prompt-close" class="link">закрыть</button>
       </div>
-      <p class="muted small">выше строки <code>---- сообщение ----</code> — системная часть, ниже — шаблон сообщения. поля: <code>{context}</code> контекст слева, <code>{n}</code> число слов, <code>{words}</code> слова окна, <code>{alternatives}</code> варианты букв.</p>
+      <p class="muted small">выше строки <code>---- сообщение ----</code> — системная часть, ниже — шаблон сообщения. поля: <code>{context}</code> контекст слева, <code>{n}</code> число слов, <code>{words}</code> слова окна, <code>{alternatives}</code> варианты букв, <code>{candidates}</code> похожие слова из словаря.</p>
       <div class="modal-cols">
         <textarea id="prompt-text" spellcheck="false"></textarea>
         <div class="preview"><div class="muted small">так уйдёт в БЯМ (пример):</div><div id="prompt-preview"></div></div>

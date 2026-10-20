@@ -21,7 +21,7 @@ slow_llm:
   window_words: 3
   include_alternatives: true   # send top-K posterior letters of every character (Q-17)
   alternatives_k: 4
-  prompt_file: prompts/correction_v2.txt
+  prompt_file: prompts/correction_v3.txt
 external:
   stop_confidence: 0.99        # send "stop" when the posterior max reaches this; null = never
   min_updates_before_stop: 12  # at least one full repetition of rows+columns (one update per flash)

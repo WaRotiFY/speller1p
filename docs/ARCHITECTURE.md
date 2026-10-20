@@ -50,7 +50,7 @@ sequenceDiagram
 | Клавиатура | модуль стимуляции; проверка и перевод в `core/keyboard.py` | модуль объявляет её в `SpellerLink(keyboard=…, layout=…)`; символы приводятся к алфавиту БЯМ (заглавные → строчные, Ё → е, `_` → пробел). Без объявления — клавиатура профиля |
 | Быстрая БЯМ | `llm/fast.py`, `llm/backends/` | `ngram` (файл в `models/ngram`), `kenlm` (имя на Hugging Face или путь), `hf_causal` (имя модели), `mock_ngram` |
 | Статистический вывод | `inference/*.py`, загрузчик `epoch/plugins.py` | новый файл с `PARAMS` и `combine(prior, likelihood, params)` |
-| Медленная БЯМ | `llm/slow.py`, `llm/backends/chat_api.py`, `mock_correction.py` | провайдер и модель в окне оператора; выбор облачного провайдера разрешает отправку ему последних слов; промпт — редактор в окне или `prompts/correction_v2.txt` |
+| Медленная БЯМ | `llm/slow.py`, `llm/backends/chat_api.py`, `llm/word_candidates.py` (словарь по вариантам букв), `mock_correction.py` | провайдер и модель в окне оператора; выбор облачного провайдера разрешает отправку ему последних слов; промпт — редактор в окне или `prompts/correction_v3.txt` (похожие слова из `llm/word_candidates.py`) |
 | Модуль стимуляции | `stimulus_kit/modules/` | новая папка с `main.py` и `settings.json` |
 | Декодер | отдельный процесс | любой, кто шлёт `SpellerLikelihood` |
 
@@ -63,7 +63,7 @@ class FastLanguageModel(Protocol):
     def top_words(self, context: str, n: int) -> list[tuple[str, float]]: ...
 ```
 
-Интерфейс медленной модели: `correct(left_context: str, window: list[str], letters=None) -> list[str]`. Слов должно вернуться столько же, иначе ответ отклоняется.
+Интерфейс медленной модели: `correct(left_context: str, window: list[str], letters=None) -> list[str]`. Ответ подгоняется к окну (`slow.align_correction`, MA-38): слово заменяется только словом той же длины; если число слов не совпало, слова сопоставляются по порядку, а ответ отклоняется, только если не подошло ни одно.
 
 ## Слияние и решение
 

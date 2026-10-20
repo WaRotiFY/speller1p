@@ -61,10 +61,63 @@ def validate_correction(words_in, words_out, strict=True):
     return True, None
 
 
+def align_correction(words_in, words_out):
+    """Fit a model reply onto the window under the speller's error model (MA-37).
+
+    A P300 speller types one symbol per epoch, so a misrecognized word keeps its length.
+    A replacement is therefore taken only for a word of the same length; a reply word of
+    another length is ignored and the typed word is kept. When the reply has fewer or more
+    words (small models drop short words like «у», «с»), its words are matched to the
+    window in order by a small dynamic programme. Returns (words, accepted, reason);
+    reason is None for an exact fit, "aligned" when some reply words were ignored or
+    words were kept as typed, and "word_count" when nothing in the reply fits.
+    """
+    # ASSUMPTION[MA-38]
+    words_in, words_out = list(words_in), list(words_out)
+    if any(not re.fullmatch(r"[а-я]+", w) for w in words_out):
+        return words_in, False, "invalid_character"
+    n, m = len(words_in), len(words_out)
+    if n == m and all(len(a) == len(b) for a, b in zip(words_in, words_out)):
+        return words_out, True, None
+    # best[i][j]: the most reply words fitted using window[:i] and reply[:j]
+    best = [[0.0] * (m + 1) for _ in range(n + 1)]
+    move = [[None] * (m + 1) for _ in range(n + 1)]
+    for i in range(n + 1):
+        for j in range(m + 1):
+            if i == 0 and j == 0:
+                continue
+            options = []
+            if i > 0:
+                options.append((best[i - 1][j], "keep"))                  # window word stays as typed
+            if j > 0:
+                options.append((best[i][j - 1] - 0.01, "drop"))         # reply word ignored
+            if i > 0 and j > 0 and len(words_in[i - 1]) == len(words_out[j - 1]):
+                gain = 1.0 + (0.5 if words_in[i - 1] == words_out[j - 1] else 0.0)
+                options.append((best[i - 1][j - 1] + gain, "fit"))
+            best[i][j], move[i][j] = max(options, key=lambda o: o[0])
+    out, i, j, fitted = list(words_in), n, m, 0
+    while i > 0 or j > 0:
+        step = move[i][j]
+        if step == "fit":
+            out[i - 1] = words_out[j - 1]
+            fitted += 1
+            i, j = i - 1, j - 1
+        elif step == "keep":
+            i -= 1
+        else:
+            j -= 1
+    if fitted == 0:
+        return words_in, False, "word_count"
+    return out, True, "aligned"
+
+
 def create_slow(cfg, allow_remote: bool, corpus):
     backend = cfg["backend"]
     if backend == "mock_dictionary":
         return MockCorrection(cfg, corpus)
+    if backend == "dictionary":
+        from eeg_speller.llm.word_candidates import DictionaryCorrection
+        return DictionaryCorrection(cfg)
     if backend == "chat_api":
         from eeg_speller.llm.backends.chat_api import ChatCorrection
         return ChatCorrection(cfg, allow_remote)

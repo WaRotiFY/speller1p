@@ -34,7 +34,8 @@ from eeg_speller.epoch.plugins import PluginFusion
 from eeg_speller.external.transport import Incoming, LSLTransport, PROTOCOL
 from eeg_speller.ext.word_prediction import WordPrediction
 from eeg_speller.llm.fast import create_fast
-from eeg_speller.llm.slow import CorrectionScheduler, create_slow, prompt_hash, validate_correction
+from eeg_speller.llm.slow import (CorrectionScheduler, align_correction, create_slow, prompt_hash,
+                                  validate_correction)
 from eeg_speller.physiology.base import PhysiologyObservation, validate_observation
 from eeg_speller.recording.recorder import SessionRecorder
 from eeg_speller.recording.storage import SessionStorage
@@ -633,7 +634,8 @@ class ExternalSession:
         if req is None or not req.words:
             return
         letters = (self._letters(req.start_word, len(req.words))
-                   if self.cfg.slow_llm.get("include_alternatives") else None)
+                   if self.cfg.slow_llm.get("include_alternatives") or
+                   getattr(self.slow, "version", "").startswith("dictionary") else None)
         prompt_file = PROJECT / self.cfg.slow_llm["prompt_file"]
         self.rec.emit("Post-factum Text Correction", "correction_requested",
                       {"correction_id": req.correction_id, "trigger": req.trigger,
@@ -653,11 +655,14 @@ class ExternalSession:
             req, letters, snapshot, epoch_id, queued = job
             start = time.perf_counter_ns()
             try:
-                if letters is not None and getattr(self.slow, "version", "").startswith("chat-api"):
+                if letters is not None and getattr(self.slow, "uses_letters", False):
                     result = self.slow.correct(req.left_context, req.words, letters)
                 else:
                     result = self.slow.correct(req.left_context, req.words)
-                accepted, reason = validate_correction(req.words, result, self.cfg.slow_llm["strict_word_count"])
+                if self.cfg.slow_llm.get("align_words", True):
+                    result, accepted, reason = align_correction(req.words, result)
+                else:
+                    accepted, reason = validate_correction(req.words, result, self.cfg.slow_llm["strict_word_count"])
             except Exception as exc:
                 result, accepted, reason = list(req.words), False, f"{type(exc).__name__}: {str(exc)[:200]}"
             latency = (time.perf_counter_ns() - start) / 1e6

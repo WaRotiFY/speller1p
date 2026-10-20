@@ -18,9 +18,11 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
+from eeg_speller.llm.word_candidates import candidates, format_candidates
+
 PROJECT = Path(__file__).resolve().parents[3]
 PROMPTS = PROJECT / "prompts"
-DEFAULT_PROMPT = PROMPTS / "correction_v2.txt"
+DEFAULT_PROMPT = PROMPTS / "correction_v3.txt"
 USER_PROMPT = PROMPTS / "user" / "correction.txt"
 KEYS_FILE = Path(os.environ.get("EEG_SPELLER_HOME", Path.home() / ".eeg_speller")) / "keys.json"
 SPLIT = "---- сообщение ----"
@@ -172,10 +174,10 @@ def check_template(text: str) -> None:
         if field not in user:
             raise ValueError(f"message template must contain {field}")
     try:
-        user.format(context="", n=0, words="", alternatives="")
+        user.format(context="", n=0, words="", alternatives="", candidates="")
     except (KeyError, IndexError, ValueError) as exc:
         raise ValueError(f"message template: unknown placeholder or stray brace ({exc}); "
-                         "allowed: {context} {n} {words} {alternatives}") from exc
+                         "allowed: {context} {n} {words} {alternatives} {candidates}") from exc
 
 
 def format_alternatives(words: list[str], letters: list[list[list]] | None) -> str:
@@ -197,7 +199,8 @@ def format_alternatives(words: list[str], letters: list[list[list]] | None) -> s
 def build_messages(template: str, left_context: str, window: list[str], letters=None) -> list[dict]:
     system, user = split_template(template)
     text = user.format(context=left_context.strip() or "(начало текста)", n=len(window),
-                       words=" ".join(window), alternatives=format_alternatives(window, letters))
+                       words=" ".join(window), alternatives=format_alternatives(window, letters),
+                       candidates=format_candidates(window, letters) if "{candidates}" in user else "")
     return [{"role": "system", "content": system}, {"role": "user", "content": text.strip()}]
 
 
@@ -213,6 +216,7 @@ def parse_words(text: str) -> list[str]:
 class ChatCorrection:
     """Post-factum Text Correction through a chat API; NEED-F-07; MA-17/20; Q-14, Q-33, Q-41."""
     version = "chat-api@1"
+    uses_letters = True
 
     def __init__(self, cfg: dict, allow_remote: bool):
         # IMPROV[Q-33]
@@ -265,4 +269,33 @@ class ChatCorrection:
             raise ValueError("empty reply" + (" (finish_reason=length: the model used the whole token limit, "
                                               "probably on reasoning; raise slow_llm.max_tokens or pick another model)"
                                               if why == "length" else f" (finish_reason={why})"))
-        return parse_words(content)
+        return self._with_dictionary(window, parse_words(content), letters)
+
+    def _with_dictionary(self, window, words, letters):
+        """Keep the model to the words the letters allow (MA-37, MA-38).
+
+        - a replacement the model made counts only if it is one of the word's dictionary
+          candidates with a share of at least ``slow_llm.candidate_min_share`` (5 %);
+          small models otherwise copy neighbours or the prompt examples;
+        - a word the model left as typed is still fixed when one candidate holds at least
+          ``slow_llm.dictionary_min_share`` (80 %).
+        A word without candidates (letters unknown, length not in the dictionary) keeps
+        whatever the model said.
+        """
+        sure_share = self.cfg.get("dictionary_min_share", 0.8)
+        min_share = float(self.cfg.get("candidate_min_share", 0.05))
+        if not letters:
+            return words
+        from eeg_speller.llm.slow import align_correction
+        fitted, ok, _ = align_correction(window, words)
+        base = fitted if ok else list(window)
+        out = []
+        for i, (typed, said) in enumerate(zip(window, base)):
+            cands = candidates(typed, letters[i]) if i < len(letters) else []
+            share = dict(cands)
+            if cands and said != typed and share.get(said, 0.0) < min_share:
+                said = typed
+            if cands and sure_share is not None and said == typed and cands[0][1] >= float(sure_share):
+                said = cands[0][0]
+            out.append(said)
+        return out

@@ -117,7 +117,7 @@ function restore() {
   $("pause-ms").value = s.pauseMs ?? d.pause_ms;
   $("stop-off").checked = !!s.stopOff;
   $("stop-off").onchange();
-  sSlow.set(s.slowBackend || "mock_dictionary");
+  sSlow.set(!s.slowBackend || s.slowBackend === "mock_dictionary" ? "dictionary" : s.slowBackend);
   $("provider").value = s.provider || "ollama";
   $("base-url").value = s.baseUrl || "";
   providerChanged(false);

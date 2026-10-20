@@ -116,7 +116,9 @@ def fake_api():
 
 def test_chat_api_prompt_alternatives_and_remote_guard(fake_api, monkeypatch, tmp_path):
     monkeypatch.setattr(chat_api, "KEYS_FILE", tmp_path / "keys.json")
-    model = chat_api.ChatCorrection({"provider": "custom", "base_url": fake_api, "model_id": "m"}, allow_remote=False)
+    v2 = (ROOT / "prompts" / "correction_v2.txt").read_text(encoding="utf-8")      # letters spelled out
+    model = chat_api.ChatCorrection({"provider": "custom", "base_url": fake_api, "model_id": "m",
+                                     "prompt_text": v2}, allow_remote=False)
     out = model.correct("мне холодно,", ["дай", "пдед"], [[[["д", .9]], [["а", .9]], [["й", .9]]],
                                                         [[["п", .9]], [["д", .46], ["л", .41]], [["е", .9]], [["д", .9]]]])
     assert out == ["дай", "плед"]
@@ -369,3 +371,31 @@ def test_replay_of_operator_session_reuses_recorded_evidence(tmp_path):
     assert manifest["repertoire"] == list(kb["symbols"])          # the module's keyboard, not the profile's
     off = replay_external(src, tmp_path / "replay", llm="off")
     assert off["error"] is None and off["replay"]["epochs"] == len(target)
+
+
+# ------------------------------------------------- word candidates for the slow LLM
+def test_word_candidates_from_letter_alternatives():
+    from eeg_speller.llm.word_candidates import candidates
+    sure = lambda ch: [[ch, 0.95]]
+    letters = [[["н", 0.5], ["п", 0.4]]] + [sure(c) for c in "ожалуйста"]
+    assert candidates("ножалуйста", letters)[0][0] == "пожалуйста"
+    assert candidates("хочу", [sure(c) for c in "хочу"])[0][0] == "хочу"    # a right word stays first
+    prompt = chat_api.read_prompt("default")
+    chat_api.check_template(prompt)
+    user = chat_api.build_messages(prompt, "", ["ножалуйста"], [letters])[1]["content"]
+    assert "ножалуйста: пожалуйста" in user
+
+
+def test_dictionary_corrector_and_reply_alignment(tmp_path):
+    from eeg_speller.llm.slow import align_correction
+    from eeg_speller.llm.word_candidates import DictionaryCorrection
+    sure = lambda w: [[[c, 0.95]] for c in w]
+    letters = [sure("принеси"), [[["н", 0.5], ["п", 0.4]]] + sure("ожалуйста")]
+    fix = DictionaryCorrection({})
+    assert fix.correct("", ["принеси", "ножалуйста"], letters) == ["принеси", "пожалуйста"]
+    # A dropped short word or a word of another length does not sink the whole reply.
+    assert align_correction(["как", "у", "небо"], ["как", "тебя"]) == (["как", "у", "тебя"], True, "aligned")
+    assert align_correction(["спасибо", "что"], ["спасибо", "шапку"])[0] == ["спасибо", "что"]
+    assert align_correction(["а", "б"], ["вввв"])[1] is False
+    cfg, passport = build_session_config({"slow": {"backend": "dictionary"}})
+    assert cfg.slow_llm["backend"] == "dictionary" and passport["slow"].startswith("словарь")
