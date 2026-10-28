@@ -10,6 +10,7 @@
 | `examples/` | короткие примеры кода (в списке окна оператора их нет): матрица (`pygame_matrix.py`), одна буква в центре (`pygame_rsvp.py`), симулятор без экрана (`headless_sim.py`) |
 | `decoders/p300_lsl_decoder.py` | пример декодера P300 по любому LSL-потоку ЭЭГ (см. `docs/DECODER.md`) |
 | `tools/edf_to_lsl.py` | проигрывает EDF-запись в LSL, как живой усилитель |
+| `tools/eeg_source.py` | проигрывает чужие EDF/BDF (метки через карту меток) или ретранслирует живой усилитель как `SpellerEEG`; см. `docs/EEG_SOURCE.md` |
 
 Самый короткий модуль:
 

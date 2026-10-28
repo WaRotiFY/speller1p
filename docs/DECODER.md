@@ -4,6 +4,7 @@
 
 - `stimulus_kit/decoders/p300_lsl_decoder.py` — P300-декодер для любого LSL-потока ЭЭГ;
 - `stimulus_kit/tools/edf_to_lsl.py` — проигрыватель EDF-записи в LSL, который ведёт себя как живой усилитель;
+- `stimulus_kit/tools/eeg_source.py` — проигрыватель чужих EDF/BDF-записей (метки через карту меток) и ретранслятор живого усилителя, см. [`EEG_SOURCE.md`](EEG_SOURCE.md);
 - `python -m eeg_speller.physiology.edf_demo` — генератор синтетической ЭЭГ и обученной модели для проверки без оборудования;
 - `python -m eeg_speller.physiology.calibrate` — калибровка модели по своей размеченной записи.
 
