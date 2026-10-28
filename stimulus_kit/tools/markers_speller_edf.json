@@ -1,0 +1,10 @@
+{
+ "_about": "Marker map for EDFs recorded by this speller (and runs/edf_demo/*.edf): annotations speller/<epoch>/<flash>/<row|column|symbol>/<index>/<repetition>, keyboard of configs/default.yaml (6×6). Use with eeg_source.py replay --marker-map.",
+ "symbols": ["а","б","в","г","д","е","ж","з","и","й","к","л","м","н","о","п","р","с","т","у","ф","х","ц","ч","ш","щ","ъ","ы","ь","э","ю","я"," ",".",",","⌫"],
+ "layout": [6, 6],
+ "flash": [
+  {"match": "^speller/(\\d+)/\\d+/row/(\\d+)/", "epoch_group": 1, "row_from_group": 2},
+  {"match": "^speller/(\\d+)/\\d+/column/(\\d+)/", "epoch_group": 1, "col_from_group": 2},
+  {"match": "^speller/(\\d+)/\\d+/symbol/(\\d+)/", "epoch_group": 1, "symbol_from_group": 2}
+ ]
+}

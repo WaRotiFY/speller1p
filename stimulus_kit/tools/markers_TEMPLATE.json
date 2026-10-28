@@ -1,0 +1,20 @@
+{
+ "_about": "Template: how a lab's EDF markers become speller-link messages. Fill it from one real file: run `python stimulus_kit/tools/eeg_source.py info file.edf`, then put the codes below. Keys starting with _ are comments.",
+
+ "_keyboard": "symbols and layout must match what the participant saw in this recording; len(symbols) = rows × cols",
+ "symbols": ["А","Б","В","Г","Д","Е","Ж","З","И","Й","К","Л","М","Н","О","П","Р","С","Т","У","Ф","Х","Ц","Ч","Ш","Щ","Ъ","Ы","Ь","Э","Ю","Я","_",".",",","⌫"],
+ "layout": [6, 6],
+
+ "_epoch": "fnmatch patterns (* and ?) of markers that start/end one symbol. Leave empty if the epoch number is inside the flash label (epoch_group) or if there are no such markers (then all flashes form one epoch; split with --start/--stop)",
+ "epoch_start": ["FILL_ME"],
+ "epoch_end": ["FILL_ME"],
+
+ "_flash": "regex rules, the first match wins. Symbols: symbols (fixed list), row_from_group / col_from_group / symbol_from_group (index from a regex group; offset = number of the first one), symbols_from_group (letters in the label, sep = separator). Optional epoch_group: regex group with the epoch number",
+ "flash": [
+  {"match": "^FILL_ME_row_(\\d+)$", "row_from_group": 1, "offset": 1},
+  {"match": "^FILL_ME_col_(\\d+)$", "col_from_group": 1, "offset": 1}
+ ],
+
+ "_cue": "marker with the target letter (copy-spelling); group 1 is the letter. Goes to SpellerReplayMarkers only (the contract does not send targets); kept for calibration labels. Delete if targets are in a separate log",
+ "cue": {"match": "^FILL_ME:(.+)$"}
+}
