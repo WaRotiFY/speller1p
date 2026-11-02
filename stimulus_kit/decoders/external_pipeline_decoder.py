@@ -190,6 +190,17 @@ def evaluate(a):
 
 # ───────────────────────────── online: LSL ─────────────────────────────
 
+def _missed(source, t_start):
+    """True if the window starts before the first EEG sample this decoder holds.
+
+    Happens when the decoder connects to the EEG stream after the first flashes
+    (e.g. a replay that another listener already started). Waiting would block
+    the whole epoch, because flashes are scored strictly in order.
+    """
+    with source.lock:
+        first = source.buffer[0][0][0] if source.buffer else None
+    return first is not None and first > t_start
+
 def run(a):
     import joblib
     from speller_link import SpellerLink
@@ -229,13 +240,16 @@ def run(a):
                     st["scores"][i] = None                     # gap inside the window
                     continue
                 if w is None:
+                    if _missed(source, onset + interval[0]):
+                        st["scores"][i] = None                 # started before our EEG buffer: never coming
+                        continue
                     break                                      # not here yet: keep evidence contiguous (through_flash)
                 w = w * 1e6                                    # LSLSource gives volts; the model is in µV
                 v = float(llr(model, preprocess(w, source.fs, cfg)[None])[0])
                 st["scores"][i] = v
                 for s in syms:
-                    if s in st["logits"]:
-                        st["logits"][s] += v
+                    # a symbol first seen now has no evidence yet (decoder joined mid-epoch)
+                    st["logits"][s] = st["logits"].get(s, 0.0) + v
                 changed = True
             complete = done and len(st["scores"]) == len(flashes)
             if changed or complete:
