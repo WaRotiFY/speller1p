@@ -1,0 +1,12 @@
+{
+ "_about": "Marker map for EDF+ made by bnci2014_008_to_edf.py (BNCI 2014-008, P300 speller with ALS patients, 6×6 BCI2000 matrix)",
+ "symbols": ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z","1","2","3","4","5","6","7","8","9","_"],
+ "layout": [6, 6],
+ "epoch_start": ["epoch"],
+ "epoch_end": [],
+ "flash": [
+  {"match": "^R(\\d)$", "row_from_group": 1, "offset": 1},
+  {"match": "^C(\\d)$", "col_from_group": 1, "offset": 1}
+ ],
+ "cue": {"match": "^target:(.+)$"}
+}
