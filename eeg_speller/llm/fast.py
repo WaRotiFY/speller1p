@@ -13,6 +13,9 @@ from eeg_speller.llm.backends.mock_ngram import MockNGram
 
 def create_fast(cfg, corpus):
     backend = cfg["backend"]
+    if backend in ("uniform", "frequency"):
+        from eeg_speller.llm.backends.simple_prior import SimplePrior
+        return SimplePrior(cfg)
     if backend == "ngram":
         from eeg_speller.llm.backends.char_ngram import CharNGram
         return CharNGram(cfg)
