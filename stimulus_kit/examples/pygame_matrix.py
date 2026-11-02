@@ -48,6 +48,8 @@ def main():
     link = SpellerLink(name="pygame_matrix", role="stimulus+decoder" if args.keyboard else "stimulus",
                        keyboard=KEYBOARD, layout=(6, 6))
     flip_cost = []
+    global ACTIVE_LINK
+    ACTIVE_LINK = link
     while True:
         epoch = wait_epoch(link, screen, small)
         if epoch is None:
@@ -67,7 +69,7 @@ def main():
         for _ in range(reps):
             order = groups[:]
             random.shuffle(order)
-            for group in order:
+            for group_index, group in enumerate(order, 1):
                 draw(screen, big, small, rows, set(group), epoch.text, args.photodiode)
                 t0 = time.perf_counter()
                 pygame.display.flip()                 # with vsync: returns at the frame swap
@@ -80,13 +82,16 @@ def main():
                 if decoder:
                     decoder.add_flash(group, pressed)
                     link.send_likelihood(decoder.probabilities())
+                if group_index == len(order) and not link.epoch_cancelled():
+                    link.trial_done()
                 if link.should_stop() or quit_requested():
                     stopped = True
                     break
             if stopped:
                 break
-        link.done()
-        if decoder:
+        if not link.epoch_cancelled():
+            link.done()
+        if decoder and not link.epoch_cancelled():
             link.send_likelihood(decoder.probabilities(), final=True)
         res = link.wait_result(timeout=5)
         show_result(screen, big, small, rows, res)
@@ -145,8 +150,10 @@ def show_result(screen, big, small, rows, res):
 def hold(until):
     """Keep the window responsive until LSL time ``until``; True if SPACE was pressed."""
     pressed = False
-    while now() < until:
+    while now() < until and not ACTIVE_LINK.epoch_cancelled():
         for ev in pygame.event.get(pygame.KEYDOWN):
+            if ev.key == pygame.K_ESCAPE:
+                ACTIVE_LINK.user_stop()
             if ev.key == pygame.K_SPACE:
                 pressed = True
         time.sleep(0.001)
@@ -161,7 +168,7 @@ def quit_requested():
     for ev in pygame.event.get(pygame.QUIT):
         return True
     keys = pygame.key.get_pressed()
-    return bool(keys[pygame.K_ESCAPE])
+    return False  # Esc cancels an epoch; closing the window exits the module.
 
 
 if __name__ == "__main__":

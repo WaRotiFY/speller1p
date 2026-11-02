@@ -39,7 +39,7 @@ def run(text, d_prime=1.0, flash_ms=None, isi_ms=None, repetitions=None, seed=0,
         for _ in range(reps):
             order = groups[:]
             rng.shuffle(order)
-            for group in order:
+            for group_index, group in enumerate(order, 1):
                 while now() < t:
                     time.sleep(0.0005)
                 link.flash(group, timestamp=t)
@@ -51,12 +51,15 @@ def run(text, d_prime=1.0, flash_ms=None, isi_ms=None, repetitions=None, seed=0,
                     logl[s] += llr
                 link.send_likelihood(_softmax(logl))
                 t += soa
+                if group_index == len(order) and not link.epoch_cancelled():
+                    link.trial_done()
                 if link.should_stop():
                     break
             if link.should_stop():
                 break
-        link.done()
-        link.send_likelihood(_softmax(logl), final=True)
+        if not link.epoch_cancelled():
+            link.done()
+            link.send_likelihood(_softmax(logl), final=True)
         res = link.wait_result(timeout=10)
         if verbose and res:
             print("epoch %d: chose %r, text %r" % (epoch.id, res.get("symbol"), res.get("text")), flush=True)

@@ -40,6 +40,8 @@ def main():
     link = SpellerLink(name="pygame_rsvp", role="stimulus+decoder" if args.keyboard else "stimulus",
                        keyboard=KEYBOARD, layout=(6, 6))
 
+    global ACTIVE_LINK
+    ACTIVE_LINK = link
     while True:
         epoch = link.wait_epoch(timeout=0.2)
         if link.ended or any(e.type == pygame.QUIT for e in pygame.event.get(pygame.QUIT)):
@@ -53,7 +55,7 @@ def main():
         for _ in range(args.repetitions):
             order = epoch.symbols[:]
             random.shuffle(order)
-            for sym in order:
+            for symbol_index, sym in enumerate(order, 1):
                 frame(screen, small, epoch.text, sym, huge, args.photodiode)
                 pygame.display.flip()
                 onset = link.flash([sym])               # <- the one required call
@@ -64,12 +66,15 @@ def main():
                 if decoder:
                     decoder.add_flash([sym], pressed)
                     link.send_likelihood(decoder.probabilities())
+                if symbol_index == len(order) and not link.epoch_cancelled():
+                    link.trial_done()
                 if link.should_stop():
                     break
             if link.should_stop():
                 break
-        link.done()
-        if decoder:
+        if not link.epoch_cancelled():
+            link.done()
+        if decoder and not link.epoch_cancelled():
             link.send_likelihood(decoder.probabilities(), final=True)
         res = link.wait_result(timeout=5)
         if res:
@@ -95,8 +100,10 @@ def frame(screen, small, text, sym, huge, photodiode=False, color=FG):
 
 def wait(until):
     pressed = False
-    while now() < until:
+    while now() < until and not ACTIVE_LINK.epoch_cancelled():
         for ev in pygame.event.get(pygame.KEYDOWN):
+            if ev.key == pygame.K_ESCAPE:
+                ACTIVE_LINK.user_stop()
             pressed |= ev.key == pygame.K_SPACE
         time.sleep(0.001)
     return pressed
