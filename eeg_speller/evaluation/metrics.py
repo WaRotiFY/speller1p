@@ -56,7 +56,7 @@ def session_metrics(session_dir):
     starts = [e["t_ns"] for e in events if e["type"] == "epoch_started"]
     decisions = [e for e in events if e["type"] == "symbol_decided"]
     duration_min = ((decisions[-1]["t_ns"] - starts[0]) / 60e9) if starts and decisions else 0
-    symbol_targets = {e["epoch_id"]: e["payload"].get("sim_target_symbol") for e in events if e["type"] == "epoch_started"}
+    symbol_targets = {e["epoch_id"]: e["payload"].get("sim_target_symbol", e["payload"].get("target_symbol")) for e in events if e["type"] == "epoch_started"}
     selected = [e for e in decisions if e["payload"]["symbol"] is not None]
     accuracy = sum(e["payload"]["symbol"] == symbol_targets[e["epoch_id"]] for e in selected) / len(selected) if selected else None
     observations = [e["payload"].get("module_metrics", {}) for e in events if e["type"] == "physiology_observation"]
@@ -67,7 +67,8 @@ def session_metrics(session_dir):
     speed = correct / duration_min if duration_min else None
     secondary_speed = sec_correct / duration_min if duration_min else None
     # ASSUMPTION[MA-27]
-    p, n = accuracy, 36
+    manifest = json.loads((session_dir / "session.json").read_text())
+    p, n = accuracy, len(manifest["repertoire"])
     if p is None:
         itr = None
     else:
@@ -84,7 +85,7 @@ def session_metrics(session_dir):
     semantic_stub = chrf(n_target, n_secondary)
     tts = [e["payload"]["latency_ms"] for e in events if e["type"] == "tts_audio_started"]
     # ASSUMPTION[MA-32]
-    return {"session_id": json.loads((session_dir / "session.json").read_text(encoding="utf-8"))["session_id"],
+    result = {"session_id": json.loads((session_dir / "session.json").read_text(encoding="utf-8"))["session_id"],
             "binary_flash_accuracy": binary, "binary_mean_accuracy": binary_mean,
             "symbol_accuracy": accuracy, "cer": distance / len(n_target) if n_target else None,
             "speed_primary_cpm": speed, "speed_secondary_cpm": secondary_speed,
@@ -94,6 +95,15 @@ def session_metrics(session_dir):
             "tts_latency_p95_ms": float(np.percentile(tts, 95)) if tts else None,
             "top3": None, "top5": None, "top10": None,
             "n_target_chars": len(n_target), "n_selected_epochs": len(selected)}
+    external_metrics = session_dir / 'derived' / 'operator_metrics.json'
+    if external_metrics.is_file():
+        m = json.loads(external_metrics.read_text())
+        result.update(symbol_accuracy=m['accuracy'], cer=m['cer_primary'], cer_secondary=m['cer_secondary'],
+                      speed_primary_cpm=m['speed_cpm'], speed_secondary_cpm=m['corrected_speed_cpm'],
+                      itr_reference_bpm=m['itr_bpm'], duration_min=m['active_seconds']/60,
+                      selection_rate_spm=m['selection_rate_spm'], itr_method=m['itr_method'])
+    return result
+
 
 
 def save_session_metrics(session_dir):
