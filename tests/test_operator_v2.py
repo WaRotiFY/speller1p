@@ -22,6 +22,16 @@ from eeg_speller.physiology.base import PhysiologyObservation
 from eeg_speller.core.distributions import SymbolDistribution, log_probs
 from eeg_speller.recording.storage import read_events
 
+
+
+def acknowledge_keyboard(tr):
+    """These regression modules implement the v2 keyboard readiness handshake."""
+    def ready(msg):
+        if msg['cmd'] == 'epoch_prepare':
+            tr.deliver('stimuli', {'event':'keyboard', 'epoch':msg['epoch'],
+                'session_id':msg['session_id'], 'symbols':msg['symbols'], 'layout':msg['layout']})
+    tr.listeners.append(ready)
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -180,6 +190,7 @@ def test_session_with_api_correction_records_raw_likelihood_and_timeline(fake_ap
                  "every_n_words": 1, "window_words": 2}})
     cfg = cfg.model_copy(update={"slow_llm": {**cfg.slow_llm, "min_context_words": 0}})
     tr = MemoryTransport()
+    acknowledge_keyboard(tr)
     plan = list("дай пдед ")
     keyboards = []
     kb = PRESETS["jcuken_4x10"]
@@ -342,6 +353,7 @@ def test_replay_of_operator_session_reuses_recorded_evidence(tmp_path):
     cfg = cfg.model_copy(update={"run_mode": "live"})
     kb = PRESETS["jcuken_4x10"]
     tr = MemoryTransport()
+    acknowledge_keyboard(tr)
     tr.deliver("stimuli", {"event": "keyboard", "symbols": kb["symbols"], "layout": list(kb["layout"])})
     target = "дом мир"
 

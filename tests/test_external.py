@@ -13,6 +13,16 @@ from eeg_speller.external.controller import ExternalSession, likelihood_vector
 from eeg_speller.external.transport import MemoryTransport
 from eeg_speller.recording.storage import read_events
 
+
+
+def acknowledge_keyboard(tr):
+    """These regression modules implement the v2 keyboard readiness handshake."""
+    def ready(msg):
+        if msg['cmd'] == 'epoch_prepare':
+            tr.deliver('stimuli', {'event':'keyboard', 'epoch':msg['epoch'],
+                'session_id':msg['session_id'], 'symbols':msg['symbols'], 'layout':msg['layout']})
+    tr.listeners.append(ready)
+
 ROOT = Path(__file__).resolve().parents[1]
 SYMBOLS = list(load_config(ROOT / "configs" / "ext_default.yaml").repertoire["symbols"])
 
@@ -22,6 +32,7 @@ def make_session(tmp_path, profile="ext_default.yaml", target="", **external):
     if external:
         cfg = cfg.model_copy(update={"external": {**cfg.external, **external}})
     transport = MemoryTransport()
+    acknowledge_keyboard(transport)
     return ExternalSession(cfg, target, tmp_path, transport=transport), transport
 
 
