@@ -1,9 +1,10 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
-const PHASES = { waiting_modules: "ждём модуль", presenting: "эпоха", result: "результат", finished: "завершено" };
+const PHASES = { waiting_modules: "ждём модуль", checking_keyboard: "сверка клавиатуры", presenting: "эпоха", result: "результат", finished: "завершено" };
 const STORE = "speller.operator.v2";
-const DECIDED = { final_likelihood: "оценка final", stop_grace_elapsed: "после стопа", done_grace_elapsed: "после done",
-  timeout: "по таймауту", no_likelihood: "нет ЭЭГ — повтор" };
+const DECIDED = { final_likelihood: "получена окончательная оценка ЭЭГ", stop_grace_elapsed: "достигнут порог уверенности",
+  done_grace_elapsed: "предъявления завершены", timeout: "истекло время ожидания",
+  no_likelihood: "нет пригодной ЭЭГ — повтор", user_stop: "отменено пользователем; символ не введён" };
 let init = null, version = -1, current = null, dismissed = null, saved = {}, promptTimer = null;
 
 async function api(path, body) {
@@ -32,7 +33,7 @@ function seg(id, onChange) {
   for (const b of box.querySelectorAll("button")) b.onclick = () => set(b.dataset.v);
   return { set, get: () => box.dataset.value };
 }
-let sLlm, sFast, sCtx, sSlow;
+let sFast, sCtx, sSlow;
 
 /* ---------------- setup ---------------- */
 async function boot() {
@@ -50,11 +51,12 @@ async function boot() {
   $("program").onchange = programChanged;
 
   // fast LLM
-  sLlm = seg("llm-mode", (v) => { for (const b of ["b-fast", "b-slow"]) $(b).style.opacity = v === "off" ? .45 : 1; });
   sFast = seg("fast-backend", (v) => {
     $("fast-ngram").classList.toggle("hidden", v !== "ngram");
     $("fast-hf").classList.toggle("hidden", v !== "hf_causal");
     $("fast-kenlm").classList.toggle("hidden", v !== "kenlm");
+    $("context-row").classList.toggle("hidden", v === "uniform" || v === "frequency");
+    txt($("fast-description"), v === "uniform" ? "Одинаковая вероятность всех клавиш; от набранного текста не зависит." : v === "frequency" ? "Частоты символов исходного текста. Пустой текст — равномерно; удаление пересчитывает частоты." : "Подсказка следующего символа по контексту.");
   });
   sCtx = seg("fast-context");
   for (const m of init.fast_models) $("ngram-file").add(new Option(m.file, m.file));
@@ -96,13 +98,12 @@ function restore() {
   if (s.task && [...$("task").options].some((o) => o.value === s.task)) $("task").value = s.task;
   if (s.custom) $("custom").value = s.custom;
   $("task").onchange();
-  sLlm.set(s.llm || "on");
   const prog = init.programs.find((p) => p.id === s.program) ||
     init.programs.find((p) => p.id === "modules/flash_rows_cols") || init.programs[0];
   $("program").value = s.program === "" ? "" : (prog ? prog.id : "");
   programChanged();
   const kenlmReady = init.kenlm.available && init.kenlm.downloaded.length > 0;
-  sFast.set(s.fastBackend || (kenlmReady ? "kenlm" : "ngram"));
+  sFast.set((s.llm === "off" ? "uniform" : s.fastBackend) || (kenlmReady ? "kenlm" : "ngram"));
   if (s.ngramFile && init.fast_models.some((m) => m.file === s.ngramFile)) $("ngram-file").value = s.ngramFile;
   $("hf-model").value = s.hfModel || "";
   $("kenlm-id").value = s.kenlmId || init.kenlm.default;
@@ -131,7 +132,7 @@ function restore() {
 function collectSaved() {
   saved = {
     ...saved, participant: $("participant").value.trim(), task: $("task").value, custom: $("custom").value,
-    llm: sLlm.get(), program: $("program").value,
+    llm: "on", program: $("program").value,
     fastBackend: sFast.get(), ngramFile: $("ngram-file").value, hfModel: $("hf-model").value.trim(),
     hfDownload: $("hf-download").checked, hfDevice: $("hf-device").value, context: sCtx.get(),
     kenlmId: $("kenlm-id").value.trim(), kenlmDownload: $("kenlm-download").checked,
@@ -254,7 +255,7 @@ async function start() {
     body = {
       participant_id: $("participant").value.trim(),
       task: v === "free" ? { kind: "free" } : v === "custom" ? { kind: "custom", text: $("custom").value } : { kind: "task", id: v },
-      llm_on: sLlm.get() === "on",
+      llm_on: true,
       physiology: { program: $("program").value },
       fast: { backend: sFast.get(), model_file: $("ngram-file").value, model_id: $("hf-model").value.trim(),
         allow_download: sFast.get() === "kenlm" ? $("kenlm-download").checked : $("hf-download").checked,
@@ -311,11 +312,10 @@ function renderTyped(s) {
 }
 
 function renderCorrected(s) {
-  const show = s.corrected && s.corrected !== s.text;
-  $("corrected-row").classList.toggle("hidden", !show);
-  if (!show) return;
+  const statuses = {off: "выключена", waiting: "ожидает условия запуска", pending: "обрабатывается…", changed: "исправления выделены", unchanged: "без изменений"};
+  txt($("correction-status"), statuses[s.slow_status] || "без изменений");
   const box = $("corrected"); box.textContent = "";
-  const a = s.text.split(" "), b = s.corrected.split(" ");
+  const a = s.text.split(" "), b = (s.corrected || "").split(" ");
   b.forEach((w, i) => { box.appendChild(el("span", w !== a[i] ? "changed" : "", w)); if (i < b.length - 1) box.appendChild(document.createTextNode(" ")); });
 }
 
@@ -331,23 +331,26 @@ function renderQuad(id, items) {
 }
 
 function renderHistory(s) {
-  const box = $("history-list"); box.textContent = "";
+  const box = $("history-list");
   const byEpoch = {};
   for (const c of s.corrections || []) (byEpoch[c.epoch_id] = byEpoch[c.epoch_id] || []).push(c);
-  const rows = [...(s.log || [])].reverse();
+  const scroll = $("history").querySelector(".history-scroll");
+  const atBottom = scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop < 30;
+  const oldScroll = scroll.scrollTop;
+  box.textContent = "";
+  const rows = [...(s.log || [])];
   const open = $("history").classList.contains("open");
   $("history-toggle").classList.toggle("hidden", rows.length <= 6);
   if (!rows.length) {
     const tr = el("tr"); const td = el("td", "muted", "эпох ещё не было"); td.colSpan = 9; tr.appendChild(td); box.appendChild(tr);
     return;
   }
-  rows.slice(0, open ? rows.length : 6).forEach((r, i) => {
+  rows.slice(open ? 0 : -6).forEach((r, i) => {
     const tr = el("tr");
-    if (!open) tr.style.opacity = Math.max(0.15, 1 - i * 0.17);
     tr.appendChild(el("td", "muted", r.epoch_id));
     tr.appendChild(el("td", null, r.target ? shown(r.target) : "—"));
     const pick = r.decided == null ? "—" : r.typed ? shown(r.typed) : r.decided;
-    tr.appendChild(el("td", "pick" + (r.correct === false ? " bad" : r.correct ? " ok" : ""), pick));
+    tr.appendChild(el("td", "pick" + (r.correct === false ? " bad" : r.correct ? " ok" : ""), pick + (r.correct === true ? " · верно" : r.correct === false ? " · ошибка" : "")));
     tr.appendChild(el("td", r.uncertain ? "unsure" : null, r.confidence == null ? "" : r.confidence.toFixed(2)));
     const alts = el("td", "alts");
     for (const [sym, p] of r.top || []) {
@@ -374,6 +377,7 @@ function renderHistory(s) {
     tr.appendChild(fix);
     box.appendChild(tr);
   });
+  scroll.scrollTop = atBottom ? scroll.scrollHeight : oldScroll;
 }
 
 function render(s) {
@@ -412,9 +416,13 @@ function render(s) {
   txt($("f-elapsed"), e ? `${e.elapsed_s} с` : "—");
   const st = s.stats;
   txt($("s-acc"), st.accuracy == null ? "—" : pct(st.accuracy));
-  txt($("s-speed"), st.speed_cpm == null ? "—" : `${st.speed_cpm} симв/мин`);
+  txt($("s-speed"), st.speed_cpm == null ? "—" : `${st.speed_cpm.toFixed(1)} симв/мин`);
   txt($("s-early"), st.early_stops);
-  txt($("s-epoch"), st.mean_epoch_s == null ? "—" : `${st.mean_epoch_s} с`);
+  txt($("s-selection"), st.selection_rate_spm == null ? "—" : `${st.selection_rate_spm.toFixed(1)} выборов/мин`);
+  txt($("s-itr"), st.itr_bpm == null ? (s.target ? "— (ждём выбор)" : "— (нет образца)") : `${st.itr_bpm.toFixed(2)} бит/мин`);
+  txt($("s-cer"), st.cer_primary == null ? "— (нет образца)" : `${pct(st.cer_primary)} / ${pct(st.cer_secondary)}`);
+  txt($("f-trials"), e ? e.trials : "—");
+  txt($("s-epoch"), st.mean_epoch_s == null ? "—" : `${st.mean_epoch_s.toFixed(2)} с`);
   const pt = $("prior-top"); pt.textContent = "";
   for (const it of (e && e.prior_top) || []) pt.appendChild(el("span", null, `${shown(it.symbol)} ${pct(it.p)}  `));
   const prog = s.stimulus_program;
@@ -423,14 +431,23 @@ function render(s) {
   txt(ps, prog ? (prog.running ? `программа ${prog.program} работает` : `программа ${prog.program} завершилась (код ${prog.returncode})`) : "");
 
   renderHistory(s);
+  const activity = $("activity-list");
+  const follow = activity.scrollHeight - activity.clientHeight - activity.scrollTop < 30;
+  const oldScroll = activity.scrollTop;
+  activity.textContent = "";
+  for (const event of (s.activity || [])) {
+    const item = el("li", event.level, (event.epoch == null ? "" : `Эпоха ${event.epoch} · `) + event.message);
+    activity.appendChild(item);
+  }
+  activity.scrollTop = follow ? activity.scrollHeight : oldScroll;
   $("pause-btn").disabled = $("stop-btn").disabled = s.finished;
   txt($("pause-btn"), s.paused ? "продолжить" : "пауза");
   $("new-btn").classList.toggle("hidden", !s.finished);
   txt($("end-note"), s.finished ? `завершено: ${s.end_reason}${s.error ? " — " + s.error : ""}` : (st.pending_corrections ? `в очереди исправлений: ${st.pending_corrections}` : ""));
 
-  const crashed = !!(prog && !prog.running && prog.returncode);
-  $("program-log").classList.toggle("hidden", !crashed);
-  txt($("program-log"), crashed ? (prog.log_tail || []).join("\n") : "");
+  const logLines = (prog && prog.log_tail) || [];
+  $("program-log").classList.toggle("hidden", !logLines.length);
+  txt($("program-log"), logLines.join("\n"));
   txt($("dir"), s.directory);
 }
 

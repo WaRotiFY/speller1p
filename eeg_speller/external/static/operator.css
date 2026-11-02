@@ -167,3 +167,23 @@ summary::marker { color: var(--main); }
   .facts { grid-template-columns: max-content 1fr; }
   .history { overflow-x: auto; }
 }
+
+/* Persistent, equally visible raw/corrected text. */
+.text-pair {display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.text-panel {min-width:0;padding:16px;border:1px solid var(--line, #555);border-radius:12px;}
+.text-label {font-size:.9rem;margin-bottom:12px;}
+.text-panel .typed {min-height:2.5em;overflow-wrap:anywhere;white-space:pre-wrap;}
+.corrected-text .changed {background:rgba(90,190,130,.25);border-bottom:2px solid #55bb88;}
+.corrected-text {color:var(--text);}
+.actions {flex-wrap:wrap;}
+.dir code {overflow-wrap:anywhere;}
+.log-tail {color:var(--sub);}
+.history-scroll {overflow:auto;max-height:440px;}
+#program-log-details {margin:12px 0;}
+@media(max-width:750px){.text-pair{grid-template-columns:1fr;}}
+.activity {margin:20px 0;}
+.activity h2 {font-size:1rem;}
+#activity-list {max-height:260px;overflow:auto;list-style:none;padding:0;}
+#activity-list li {padding:8px 12px;border-left:3px solid #9aa3ad;margin:6px 0;background:rgba(130,140,150,.08);}
+#activity-list li.warning {border-color:#e8c34c;}
+#activity-list li.error {border-color:#e87878;}

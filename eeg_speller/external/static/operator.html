@@ -30,11 +30,6 @@
         </label>
         <label class="wide hidden" id="custom-row">фраза <input id="custom" maxlength="200" autocomplete="off"></label>
       </div>
-      <div class="row-opts">
-        <div class="seg" id="llm-mode" data-value="on">
-          <button data-v="on">с БЯМ</button><button data-v="off">без БЯМ</button>
-        </div>
-      </div>
     </section>
 
     <section class="block" id="b-phys">
@@ -46,7 +41,7 @@
     <section class="block" id="b-fast">
       <h2><span class="num">2</span>быстрая БЯМ</h2>
       <div class="seg" id="fast-backend" data-value="ngram">
-        <button data-v="ngram">4-грамма</button><button data-v="kenlm">KenLM</button><button data-v="hf_causal">HF</button><button data-v="mock_ngram">mock</button>
+        <button data-v="uniform">равномерное</button><button data-v="frequency">частотное</button><button data-v="ngram">4-грамма</button><button data-v="kenlm">KenLM</button><button data-v="hf_causal">HF</button><button data-v="mock_ngram">mock</button>
       </div>
       <div id="fast-ngram" class="grid">
         <label class="wide">модель <select id="ngram-file"></select></label>
@@ -60,7 +55,8 @@
         <label>устройство <select id="hf-device"><option>cpu</option><option>cuda</option><option>mps</option></select></label>
         <label class="check"><input type="checkbox" id="hf-download"> разрешить скачать</label>
       </div>
-      <div class="row-opts">
+      <p id="fast-description" class="muted small"></p>
+      <div class="row-opts" id="context-row">
         <span class="muted small">контекст:</span>
         <div class="seg small" id="fast-context" data-value="primary">
           <button data-v="primary">набранный текст</button><button data-v="secondary">исправленный</button>
@@ -121,8 +117,10 @@
     <div id="passport" class="passport"></div>
 
     <div class="words-wrap">
-      <div id="typed" class="typed"></div>
-      <div id="corrected-row" class="corrected hidden"><span class="muted">исправлено:</span> <span id="corrected"></span></div>
+      <div class="text-pair">
+        <section class="text-panel"><div class="text-label">Исходный текст</div><div id="typed" class="typed"></div></section>
+        <section class="text-panel" id="corrected-row"><div class="text-label">После медленной LLM <span id="correction-status" class="muted small"></span></div><div id="corrected" class="typed corrected-text"></div></section>
+      </div>
       <div id="cands" class="cands"></div>
     </div>
 
@@ -148,10 +146,14 @@
           <dt>стимулов</dt><dd id="f-flashes">—</dd>
           <dt>обновлений ЭЭГ</dt><dd id="f-updates">—</dd>
           <dt>время эпохи</dt><dd id="f-elapsed">—</dd>
-          <dt>точность</dt><dd id="s-acc">—</dd>
-          <dt>скорость</dt><dd id="s-speed">—</dd>
+          <dt>точность выбора</dt><dd id="s-acc">—</dd>
+          <dt>скорость текста</dt><dd id="s-speed">—</dd>
           <dt>досрочных стопов</dt><dd id="s-early">—</dd>
           <dt>средняя эпоха</dt><dd id="s-epoch">—</dd>
+          <dt>trial завершено</dt><dd id="f-trials">—</dd>
+          <dt>скорость выбора</dt><dd id="s-selection">—</dd>
+          <dt title="Оценка по Wolpaw: число вариантов, точность выбора до коррекции и активное время. При изменении клавиатуры — по блокам. Ниже случайного уровня: 0.">ITR (оценочный)</dt><dd id="s-itr">—</dd>
+          <dt>CER до / после</dt><dd id="s-cer">—</dd>
         </dl>
         <div class="prior-line"><span class="muted">бям:</span> <span id="prior-top"></span></div>
         <div id="program-status" class="muted small"></div>
@@ -164,12 +166,13 @@
       <button id="new-btn" class="start hidden">новая сессия</button>
       <span id="end-note" class="muted small"></span>
     </div>
-    <pre id="program-log" class="log-tail hidden"></pre>
+    <section class="activity"><h2>События сеанса</h2><ol id="activity-list" aria-live="polite"></ol></section>
+    <details id="program-log-details"><summary>Технический журнал модуля</summary><pre id="program-log" class="log-tail hidden"></pre></details>
 
     <div class="history" id="history">
-      <div class="history-head"><span>история эпох</span><button id="history-toggle" class="link small">показать всё</button></div>
+      <div class="history-head"><span>История: ранние события сверху, новые снизу</span><button id="history-toggle" class="link small">показать всё</button></div>
       <div class="history-scroll"><table class="epochs">
-        <thead><tr><th>#</th><th>цель</th><th>выбор</th><th>увер.</th><th>варианты</th><th>стим.</th><th>сек</th><th>как решено</th><th>медленная БЯМ</th></tr></thead>
+        <thead><tr><th>Эпоха</th><th>Ожидалось</th><th>Выбрано</th><th>Уверенность</th><th>Другие варианты</th><th>Стимулов</th><th>Время, с</th><th>Причина завершения</th><th>Медленная LLM</th></tr></thead>
         <tbody id="history-list"></tbody>
       </table></div>
     </div>
