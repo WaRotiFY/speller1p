@@ -1,27 +1,32 @@
 """speller_link — the only file a stimulus or decoder module needs from the speller.
 
 Copy this file next to your program. It depends only on ``pylsl``
-(``pip install pylsl``). Protocol name: ``speller-link@1``.
+(``pip install pylsl``). Protocol name: ``speller-link@2``.
 
-Minimum rule for a stimulus program (everything else is optional)::
+The SDK confirms the keyboard on every epoch_prepare. A stimulus program waits
+for an epoch and reports actual onsets immediately after display.flip()::
 
     from speller_link import SpellerLink
     link = SpellerLink(keyboard="АБВГДЕ…", layout=(6, 6))   # your keyboard
-    ...
+    epoch = link.wait_epoch()
     pygame.display.flip()
     link.flash(["а", "б", "в", "г", "д", "е"])   # right after the flip
 
-Optional calls::
+Epoch/trial calls (see CONTRACT.md for a complete loop)::
 
     epoch = link.wait_epoch()     # block until the speller asks for the next symbol
     link.should_stop()            # True when the speller is confident enough -> next symbol
+    link.trial_done()             # full stimulation cycle for every symbol completed
+    link.get_distribution()       # full EEG + FAST-prior posterior for a ready trial, or None
+    link.user_stop()              # cancel epoch WITHOUT choosing a symbol; pause session
     link.done()                   # you finished presenting this epoch
     link.result()                 # last chosen symbol and typed text, to show the participant
     link.send_likelihood({...})   # only if your program also decodes EEG
 
 All messages are JSON strings on three LSL marker streams:
 
-    SpellerControl     speller -> modules    epoch_start / stop / result / pause / resume / end
+    SpellerControl     speller -> modules    epoch_prepare / epoch_start / distribution /
+                                             stop / epoch_cancelled / result / pause / resume / end
     SpellerStimuli     stimulus -> speller   {"epoch": N, "flash": [symbols]}, {"epoch": N, "event": "done"},
                                              {"event": "keyboard", "symbols": [...], "layout": [rows, cols]}
     SpellerLikelihood  decoder  -> speller   {"epoch": N, "p": {symbol: value}, "final": bool}
@@ -39,7 +44,7 @@ try:
 except ImportError as exc:  # pragma: no cover - message for module authors
     raise ImportError("speller_link needs pylsl: pip install pylsl") from exc
 
-PROTOCOL = "speller-link@1"
+PROTOCOL = "speller-link@2"
 CONTROL_STREAM = "SpellerControl"
 STIMULI_STREAM = "SpellerStimuli"
 LIKELIHOOD_STREAM = "SpellerLikelihood"
@@ -54,6 +59,8 @@ class Epoch:
         self.layout = tuple(msg.get("layout") or (6, 6))
         self.text = msg.get("text", "")
         self.settings = dict(msg.get("settings") or {})
+        self.keyboard_id = msg.get("keyboard_id")
+        self.session_id = msg.get("session_id")
 
     def rows(self):
         """Symbols split into rows of the layout (a convenience for matrix displays)."""
@@ -102,6 +109,11 @@ class SpellerLink:
         self._epoch = None              # current Epoch
         self._returned = None           # id of the last epoch handed out by wait_epoch
         self._stopped = set()           # epochs the speller asked to stop
+        self._cancelled = set()
+        self._distributions = {}
+        self._flash_count = 0
+        self._trial = 0
+        self._session_id = None
         self._result = None             # {"epoch", "symbol", "text", ...}
         self._paused = False
         self._ended = False
@@ -161,10 +173,28 @@ class SpellerLink:
 
     def _handle(self, msg):
         cmd = msg.get("cmd")
+        if cmd == "epoch_prepare":
+            self._session_id = msg.get("session_id")
+            if "stimulus" in self.role:
+                if self.keyboard is None:
+                    self.keyboard = {"symbols": msg["symbols"], "layout": msg["layout"]}
+                self.send_keyboard(epoch=msg["epoch"])
+            return
         with self._lock:
             if cmd == "epoch_start":
                 self._epoch = Epoch(msg)
+                self._session_id = msg.get("session_id")
+                self._flash_count = self._trial = 0
+                self._distributions = {}
                 self._new_epoch.notify_all()
+            elif cmd == "distribution":
+                if (self._epoch and msg.get("epoch") == self._epoch.id
+                        and msg.get("keyboard_id") == self._epoch.keyboard_id
+                        and msg.get("session_id") == self._epoch.session_id):
+                    self._distributions[msg["trial"]] = msg
+            elif cmd == "epoch_cancelled":
+                self._cancelled.add(int(msg.get("epoch", -1)))
+                self._stopped.add(int(msg.get("epoch", -1)))
             elif cmd == "stop":
                 self._stopped.add(int(msg.get("epoch", -1)))
             elif cmd == "result":
@@ -189,19 +219,63 @@ class SpellerLink:
         """
         if timestamp is None:
             timestamp = pylsl.local_clock()
-        msg = {"epoch": self._epoch_id(epoch), "flash": list(symbols)}
+        self._flash_count += 1
+        msg = {"epoch": self._epoch_id(epoch), "flash": list(symbols),
+               "flash_id": self._flash_count, "keyboard_id": self._epoch.keyboard_id if self._epoch else None}
         self._stim.push_sample([json.dumps(msg, ensure_ascii=False)], timestamp)
         return timestamp
 
-    def send_keyboard(self):
-        """Tell the speller which keyboard this module shows (sent once after connecting)."""
-        msg = {"event": "keyboard", **self.keyboard}
+    def send_keyboard(self, epoch=None):
+        """Announce the current keyboard; v2 also confirms every epoch_prepare."""
+        msg = {"event": "keyboard", **self.keyboard, "epoch": epoch, "session_id": self._session_id}
         self._stim.push_sample([json.dumps(msg, ensure_ascii=False)], pylsl.local_clock())
 
     def done(self, epoch=None):
         """Tell the speller that presentation of this epoch is finished."""
         msg = {"epoch": self._epoch_id(epoch), "event": "done"}
         self._stim.push_sample([json.dumps(msg)], pylsl.local_clock())
+
+    def trial_done(self, trial=None, through_flash=None, epoch=None):
+        """All required stimulation for every symbol completed one more time.
+
+        Row/column: all rows AND columns; moving paradigms: one complete motion
+        per symbol. An incomplete early-stopped cycle must not call this method.
+        """
+        self._trial = self._trial + 1 if trial is None else int(trial)
+        self._stim.push_sample([json.dumps({"event": "trial_done", "epoch": self._epoch_id(epoch),
+            "trial": self._trial, "through_flash": self._flash_count if through_flash is None else through_flash,
+            "keyboard_id": self._epoch.keyboard_id if self._epoch else None})], now())
+        return self._trial
+
+    def get_distribution(self, trial=None, epoch=None):
+        """Last complete trial's EEG + fast-prior distribution, or None.
+
+        Returned metadata identifies its epoch, trial, keyboard and evidence
+        watermark. It is a posterior, never an EEG-only likelihood.
+        """
+        with self._lock:
+            if self._epoch is None or self._epoch.id != self._epoch_id(epoch) or not self._distributions:
+                return None
+            trial = max(self._distributions) if trial is None else trial
+            result = self._distributions.get(trial)
+            return json.loads(json.dumps(result)) if result else None
+
+    def request_distribution(self, trial=None, epoch=None):
+        self._stim.push_sample([json.dumps({"event": "distribution_request", "epoch": self._epoch_id(epoch),
+            "trial": self._trial if trial is None else trial})], now())
+
+    def user_stop(self, epoch=None):
+        """Cancel this epoch immediately, without selecting any symbol."""
+        eid = self._epoch_id(epoch)
+        with self._lock:
+            self._cancelled.add(eid)
+            self._stopped.add(eid)
+        self._stim.push_sample([json.dumps({"event": "user_stop", "epoch": eid,
+            "keyboard_id": self._epoch.keyboard_id if self._epoch else None})], now())
+
+    def epoch_cancelled(self, epoch=None):
+        with self._lock:
+            return self._epoch_id(epoch) in self._cancelled
 
     def wait_epoch(self, timeout=None):
         """Block until the speller starts a new epoch; ``None`` when the session ends."""
@@ -253,7 +327,7 @@ class SpellerLink:
         return None
 
     # --------------------------------------------------------- decoder calls
-    def send_likelihood(self, values, final=False, epoch=None, usable=True, info=None):
+    def send_likelihood(self, values, final=False, epoch=None, usable=True, info=None, through_flash=None):
         """Send P(EEG | target = symbol) for each symbol — WITHOUT any language model.
 
         ``values``: dict {symbol: probability} or a list in the order of
@@ -269,7 +343,8 @@ class SpellerLink:
         else:
             values = {str(k): float(v) for k, v in values.items()}
         msg = {"epoch": self._epoch_id(epoch), "p": values, "final": bool(final),
-               "usable": bool(usable)}
+               "usable": bool(usable), "through_flash": self._flash_count if through_flash is None else through_flash,
+               "keyboard_id": self._epoch.keyboard_id if self._epoch else None}
         if info:
             msg["info"] = info
         self._lik.push_sample([json.dumps(msg, ensure_ascii=False)], pylsl.local_clock())
