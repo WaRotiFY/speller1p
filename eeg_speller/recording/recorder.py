@@ -20,6 +20,7 @@ class SessionRecorder:
         self.path = directory / "events.jsonl"
         self.session_id, self.participant_id, self.clock = session_id, participant_id, clock
         self.seq = 0
+        self.on_event = None
         self.file = self.path.open("w", encoding="utf-8")
 
     def emit(self, block: str, kind: str, payload: dict, epoch_id=None, t_ns=None):
@@ -35,6 +36,8 @@ class SessionRecorder:
                  "payload": serializable(payload)}
         self.file.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
         self.seq += 1
+        if self.on_event is not None:
+            self.on_event(event)
         return event
 
     def _lsl(self) -> dict:

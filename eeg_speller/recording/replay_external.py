@@ -76,12 +76,18 @@ def recorded_epochs(session_dir: Path):
 class _Player:
     """Plays the recorded epochs as a stimulus module + decoder would."""
 
-    def __init__(self, transport: MemoryTransport, epochs):
+    def __init__(self, transport: MemoryTransport, epochs, keyboards):
         self.tr, self.epochs, self.next = transport, epochs, 0
+        self.keyboards = keyboards
         self.session: ExternalSession | None = None
         self.stop = threading.Event()
 
     def __call__(self, msg):
+        if msg.get("cmd") == "epoch_prepare":
+            kb = self.keyboards[min(self.next, len(self.keyboards)-1)]
+            self.tr.deliver("stimuli", {"event": "keyboard", **kb,
+                "epoch": msg["epoch"], "session_id": msg["session_id"]}, module="replay")
+            return
         if msg.get("cmd") == "epoch_start":
             if self.next >= len(self.epochs):
                 self.session.request_stop("replay_finished")
@@ -137,7 +143,16 @@ def replay_external(session_dir, output="runs", config=None, llm=None) -> dict:
     target = (src / "texts" / "target.txt").read_text(encoding="utf-8")
     keyboard, epochs = recorded_epochs(src)
     tr = MemoryTransport()
-    player = _Player(tr, epochs)
+    keyboards = []
+    current_keyboard = keyboard
+    for event in read_events(src):
+        p = event['payload']
+        if event['type'] == 'keyboard_set':
+            current_keyboard = {"symbols": p['symbols'], "layout": p['layout']}
+        elif event['type'] == 'epoch_started':
+            keyboards.append({"symbols": p.get('symbols', current_keyboard['symbols']),
+                              "layout": p.get('layout', current_keyboard['layout'])})
+    player = _Player(tr, epochs, keyboards or [keyboard])
     tr.listeners.append(player)
     session = ExternalSession(cfg, target, Path(output), transport=tr, replay_of=src.name,
                               passport={"replay_of": src.name})
