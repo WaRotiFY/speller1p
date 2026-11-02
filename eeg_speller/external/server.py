@@ -77,6 +77,9 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
             raise ValueError("choose an n-gram model from models/ngram")
         patch["fast_llm"] = {"backend": "ngram", "model_file": model_file, "model_id": Path(model_file).stem}
         passport["fast"] = Path(model_file).stem
+    elif backend in ("uniform", "frequency"):
+        patch["fast_llm"] = {"backend": backend, "model_id": backend, "context_source": "primary"}
+        passport["fast"] = "равномерное распределение" if backend == "uniform" else "частоты набранного текста"
     elif backend == "hf_causal":
         model_id = str(fast.get("model_id") or "").strip()
         if not model_id or len(model_id) > 200 or any(c.isspace() for c in model_id):

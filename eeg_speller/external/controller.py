@@ -1,9 +1,8 @@
-"""Speller core for removable stimulus/decoder modules (protocol ``speller-link@1``).
+"""Speller core for removable stimulus/decoder modules (protocol ``speller-link@2``).
 
 Per epoch the core:
-1. computes the language prior and sends ``epoch_start`` (keyboard symbols and layout,
-   typed text, suggested timing). The keyboard is the one the stimulus module announced
-   when it connected (``{"event": "keyboard"}``); without it the profile's keyboard is used;
+1. verifies the current keyboard via ``epoch_prepare`` / ``keyboard``, then computes
+   the language prior and sends ``epoch_start`` with its frozen keyboard;
 2. logs every flash marker it receives, but never draws or schedules stimuli itself;
 3. fuses every likelihood update from a decoder with the prior (plugin from inference/);
 4. sends ``stop`` once the posterior confidence reaches ``external.stop_confidence``
@@ -18,6 +17,7 @@ EEG and of the flash markers.
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 import queue
 import re
@@ -39,6 +39,8 @@ from eeg_speller.llm.slow import (CorrectionScheduler, align_correction, create_
 from eeg_speller.physiology.base import PhysiologyObservation, validate_observation
 from eeg_speller.recording.recorder import SessionRecorder
 from eeg_speller.recording.storage import SessionStorage
+from eeg_speller.evaluation.online import performance
+from eeg_speller.external.activity import describe
 from eeg_speller.text.primary import PrimaryText
 from eeg_speller.text.secondary import SecondaryText
 
@@ -56,6 +58,7 @@ DEFAULTS = {
     "wait_modules_s": 60.0,           # before the first epoch: wait for a listening module
     "send_text": True,                # include typed text in epoch_start / result
     "keyboard_wait_s": 5.0,           # after a module connects: wait for its keyboard
+    "keyboard_check_each_epoch": True,
     "top_k_display": 4,
 }
 
@@ -110,8 +113,10 @@ class ExternalSession:
         self.target = target
         self.keyboard_source = "profile"
         self.pending_keyboard = None
+        self.keyboard_ack = None
+        self.keyboard_id = self._keyboard_id()
         self.primary, self.secondary = PrimaryText(), SecondaryText()
-        self.char_post: list[np.ndarray | None] = []      # posterior of every typed character
+        self.char_post: list[dict | None] = []  # typed-character probabilities on the ORIGINAL keyboard
         self.detector = SymbolDetector(cfg.detector, self.rep)
         self.fusion = PluginFusion(cfg.fusion, cfg.mode["llm"])
         make = model_factory or default_model_factory
@@ -163,6 +168,11 @@ class ExternalSession:
         self.phase = "waiting_modules"
         self.current = None
         self.log: list[dict] = []
+        self.activity = []
+        self.rec.on_event = self._capture_activity
+        self.metric_rows: list[dict] = []
+        self.pause_started = None
+        self.paused_seconds = 0.0
         self.corrections: list[dict] = []
         self.future: dict[int, list[Incoming]] = {}
         self.flash_counts: dict[int, int] = {}
@@ -175,6 +185,14 @@ class ExternalSession:
         self.passport.setdefault("keyboard", f"{self.rep.layout[0]}×{self.rep.layout[1]} (профиль)")
 
     # ---------------------------------------------------------------- public
+    def _capture_activity(self, event):
+        message = describe(event)
+        if message:
+            self.activity.append({'seq': event['seq'], 'epoch': event['epoch_id'],
+                'lsl_s': event.get('lsl_s'), 'message': message,
+                'level': 'error' if event['type'] == 'error' else 'warning' if event['type'] == 'warning' else 'info'})
+            del self.activity[:-1000]
+
     def start(self) -> "ExternalSession":
         if self.slow is not None:
             self.correction_thread.start()
@@ -190,6 +208,11 @@ class ExternalSession:
             if self.finished or paused == self.paused:
                 return
             self.paused = paused
+            if paused:
+                self.pause_started = time.monotonic()
+            elif self.pause_started is not None:
+                self.paused_seconds += time.monotonic() - self.pause_started
+                self.pause_started = None
             self.transport.send({"cmd": "pause" if paused else "resume"})
             self.rec.emit("Session Recorder", "session_paused" if paused else "session_resumed",
                           {"next_epoch_id": self.epoch_id})
@@ -245,7 +268,10 @@ class ExternalSession:
             if time.monotonic() > deadline:
                 raise TimeoutError("no stimulus module connected to SpellerControl")
             self._drain(0.1)
-        # The module announces its keyboard right after connecting; wait for it a little.
+        if self.opts["keyboard_check_each_epoch"]:
+            self._drain(0.05)
+            return
+        # Legacy profiles can explicitly opt out of the v2 per-epoch handshake.
         until = time.monotonic() + float(self.opts["keyboard_wait_s"])
         while self.keyboard_source == "profile" and self.pending_keyboard is None and time.monotonic() < until:
             if self.stop_requested:
@@ -276,6 +302,9 @@ class ExternalSession:
     def _receive_keyboard(self, item: Incoming):
         # IMPROV[Q-38]
         symbols, layout = item.msg.get("symbols"), item.msg.get("layout")
+        if self.phase == "checking_keyboard":
+            if item.msg.get("epoch") != self.epoch_id or item.msg.get("session_id") != self.session_id:
+                return
         try:
             validate_keyboard(symbols, layout or [0, 0])
         except (ValueError, TypeError) as exc:
@@ -284,6 +313,8 @@ class ExternalSession:
                               {"module": item.module, "message": f"rejected keyboard: {exc}"}, None)
             return
         self.pending_keyboard = (tuple(symbols), (int(layout[0]), int(layout[1])), item.module)
+        if self.phase == "checking_keyboard":
+            self.keyboard_ack = item.msg["epoch"]
         if self.phase != "presenting":
             self._apply_pending_keyboard()
 
@@ -295,6 +326,7 @@ class ExternalSession:
         self.pending_keyboard = None
         with self.lock:
             self.rep = Repertoire(symbols, layout)
+            self.keyboard_id = self._keyboard_id()
             self.typed = {s: typed_char(s) for s in symbols}
             self.detector = SymbolDetector(self.cfg.detector, self.rep)
             self.keyboard_source = module
@@ -311,6 +343,37 @@ class ExternalSession:
                               None)
         self._bump()
 
+    def _keyboard_id(self):
+        raw = json.dumps([list(self.rep.symbols), list(self.rep.layout)], ensure_ascii=False)
+        return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+    def _prepare_epoch(self):
+        if not self.opts["keyboard_check_each_epoch"]:
+            self._apply_pending_keyboard()
+            return True
+        self.phase = "checking_keyboard"
+        self.keyboard_ack = None
+        self._bump()
+        deadline, sent = time.monotonic() + float(self.opts["keyboard_wait_s"]), 0.0
+        while not self.stop_requested:
+            now = time.monotonic()
+            if now - sent >= 0.5:
+                self.transport.send({"cmd": "epoch_prepare", "protocol": PROTOCOL,
+                    "session_id": self.session_id, "epoch": self.epoch_id,
+                    "symbols": list(self.rep.symbols), "layout": list(self.rep.layout)})
+                sent = now
+            self._drain(0.02)
+            if self.keyboard_ack == self.epoch_id:
+                self._apply_pending_keyboard()
+                return True
+            if time.monotonic() >= deadline:
+                self.rec.emit("Presentation Method", "warning",
+                    {"message": "Модуль не подтвердил клавиатуру эпохи; стимуляция не начата.",
+                     "module": "keyboard_handshake"}, self.epoch_id)
+                self.set_paused(True)
+                return False
+        return False
+
     # ----------------------------------------------------------------- epoch
     def _prior(self) -> tuple[SymbolDistribution, float, list, float]:
         start = time.perf_counter_ns()
@@ -318,7 +381,8 @@ class ExternalSession:
             prior = SymbolDistribution(self.rep, log_probs(np.ones(len(self.rep.symbols))), "uniform",
                                        len(self.primary.value))
         else:
-            context = (self.primary.value if self.cfg.fast_llm["context_source"] == "primary"
+            context = (self.primary.value if self.cfg.fast_llm.get("backend") in ("uniform", "frequency")
+                       or self.cfg.fast_llm["context_source"] == "primary"
                        else self.secondary.value)
             prior = self.fast.predict(context, self.rep)
         prior_ms = (time.perf_counter_ns() - start) / 1e6
@@ -330,7 +394,8 @@ class ExternalSession:
         return self.target[self.target_index] if self.target and self.target_index < len(self.target) else None
 
     def _run_epoch(self):
-        self._apply_pending_keyboard()
+        if not self._prepare_epoch():
+            return
         eid, position = self.epoch_id, len(self.primary.value)
         t_epoch = self.transport.now()
         prior, prior_ms, words, words_ms = self._prior()
@@ -345,11 +410,16 @@ class ExternalSession:
                            "repertoire_hash": hashlib.sha256("".join(self.rep.symbols).encode()).hexdigest(),
                            "paradigm": "external", **settings, "pause_ms": self.cfg.stimulus["pause_ms"],
                            "retry_idx": self.retry, "target_symbol": target_char,
+                           "target_position": self.target_index, "n_symbols": len(self.rep.symbols),
+                           "symbols": list(self.rep.symbols), "keyboard_id": self.keyboard_id,
+                           "layout": list(self.rep.layout),
                            "stop_confidence": self.opts["stop_confidence"]}, eid)
             self.rec.emit("Source Model (Fast LLM)", "prior_computed",
                           {"model_id": self.fast.model_id if self.fast else "uniform",
                            "context_source": self.cfg.fast_llm["context_source"],
                            "context_tail": self.primary.value[-64:], "context_len": position,
+                           **({"raw_p": self.fast.probabilities(self.primary.value, self.rep).tolist()}
+                              if hasattr(self.fast, "probabilities") else {}),
                            "log_p": prior.log_p, "wall_latency_ms": prior_ms}, eid)
             if self.words:
                 self.rec.emit("ext:word_prediction", "word_candidates",
@@ -359,6 +429,8 @@ class ExternalSession:
                             "prior": prior, "obs": None, "post": None, "updates": 0,
                             "flashes": self.flash_counts.get(eid, 0),
                             "stop_sent": False, "words": words, "prior_ms": prior_ms,
+                            "target_position": self.target_index, "trials": {}, "trial_distributions": {},
+                            "evidence_through": 0, "evidence_snapshots": {},
                             "began": time.monotonic(),
                             "timeline": {"epoch_start_lsl": t_epoch, "prior_ready_lsl": self.transport.now(),
                                          "first_flash_lsl": None, "last_flash_lsl": None,
@@ -368,6 +440,7 @@ class ExternalSession:
                                          "decided_lsl": None, "result_sent_lsl": None}}
             self.phase = "presenting"
             msg = {"cmd": "epoch_start", "protocol": PROTOCOL, "epoch": eid,
+                   "session_id": self.session_id, "keyboard_id": self.keyboard_id,
                    "symbols": list(self.rep.symbols), "layout": list(self.rep.layout), "settings": settings}
             if self.opts["send_text"]:
                 msg["text"] = self.primary.value
@@ -388,6 +461,30 @@ class ExternalSession:
                 if epoch > eid:
                     self.future.setdefault(epoch, []).append(item)
                     continue
+                if item.msg.get("keyboard_id", self.keyboard_id) != self.keyboard_id:
+                    continue
+                if item.msg.get("session_id", self.session_id) != self.session_id:
+                    continue
+                if item.kind == "stimuli" and item.msg.get("event") == "user_stop":
+                    self.transport.send({"cmd": "epoch_cancelled", "epoch": eid, "reason": "user_stop"})
+                    self.rec.emit("Presentation Method", "epoch_user_stopped",
+                        {"module": item.module, "sent_lsl_s": item.lsl_time,
+                         "recv_lsl_s": item.recv_time}, eid)
+                    self._abort("user_stop")
+                    self.set_paused(True)
+                    return
+                if item.kind == "stimuli" and item.msg.get("event") == "trial_done":
+                    trial, through = item.msg.get("trial"), item.msg.get("through_flash")
+                    if isinstance(trial, int) and trial > 0 and isinstance(through, int) and through > 0:
+                        self.current["trials"].setdefault(trial, through)
+                        self._publish_trials()
+                    continue
+                if item.kind == "stimuli" and item.msg.get("event") == "distribution_request":
+                    trial = item.msg.get("trial")
+                    update = self.current["trial_distributions"].get(trial)
+                    if update:
+                        self.transport.send(update)
+                    continue
                 if item.kind == "stimuli" and item.msg.get("event") == "done":
                     if done_at is None:
                         done_at = time.monotonic()
@@ -400,7 +497,12 @@ class ExternalSession:
                         self._send_stop()
             now = time.monotonic()
             cur = self.current
-            if final is not None:
+            # Likelihood and stimulus markers travel through different LSL
+            # streams. The final likelihood can overtake the last trial_done.
+            # v2 presenters send done after all trial markers on their stream;
+            # wait for it before closing the epoch. Legacy decoders without a
+            # keyboard identifier retain the v1 final-only behaviour.
+            if final is not None and (done_at is not None or not final.msg.get("keyboard_id")):
                 return self._decide("final_likelihood")
             if cur["obs"] is not None:
                 if stop_at and now - stop_at > float(self.opts["stop_grace_s"]):
@@ -418,6 +520,9 @@ class ExternalSession:
         # IMPROV[Q-35]
         # ASSUMPTION[MA-03]
         cur = self.current
+        through = item.msg.get("through_flash", cur["flashes"])
+        if not isinstance(through, int) or through < cur["evidence_through"]:
+            return False
         raw = item.msg.get("p", item.msg.get("log_p"))
         try:
             log_p = likelihood_vector(raw, list(self.rep.symbols))
@@ -446,6 +551,8 @@ class ExternalSession:
             tl["final_likelihood_sent_lsl"], tl["final_likelihood_recv_lsl"] = item.lsl_time, item.recv_time
         with self.lock:
             cur.update(obs=obs, post=post, updates=cur["updates"] + 1, raw=raw)
+            cur["evidence_through"] = through
+            cur["evidence_snapshots"][through] = (post, cur["updates"], obs.module_metrics["usable"])
             # The likelihood is stored twice: exactly as received (raw) and normalized (log_p).
             self.rec.emit("EEG / EOG source", "physiology_observation",
                           {"log_p": obs.log_p, "raw": raw, "semantics": "likelihood", "source": item.module,
@@ -458,8 +565,30 @@ class ExternalSession:
                               {"module": self.fusion.name, "message": f"inference plugin failed, "
                                f"physiology only used: {self.fusion.last_error}"}, cur["epoch_id"])
             cur["fusion_ms"] = fusion_ms
+            self._publish_trials()
         self._bump()
         return bool(item.msg.get("final"))
+
+    def _publish_trials(self):
+        cur = self.current
+        if cur is None:
+            return
+        for trial, boundary in sorted(cur["trials"].items()):
+            if trial in cur["trial_distributions"]:
+                continue
+            ready = sorted(n for n in cur["evidence_snapshots"] if n >= boundary)
+            if not ready:
+                continue  # The last stimulus response has not been decoded yet.
+            through = ready[0]
+            post, update, usable = cur["evidence_snapshots"][through]
+            msg = {"cmd": "distribution", "semantics": "posterior", "epoch": cur["epoch_id"],
+                   "session_id": self.session_id, "trial": trial, "keyboard_id": self.keyboard_id,
+                   "symbols": list(self.rep.symbols), "p": np.exp(post.log_p).tolist(),
+                   "through_flash": through, "trial_last_flash": boundary, "update": update,
+                   "usable": usable, "fusion": post.fusion, "lsl_s": self.transport.now()}
+            cur["trial_distributions"][trial] = msg
+            self.transport.send(msg)
+            self.rec.emit("Statistical Inference", "trial_distribution", msg, cur["epoch_id"])
 
     def _ready_to_stop(self) -> bool:
         # ASSUMPTION[MA-34]
@@ -496,7 +625,7 @@ class ExternalSession:
                     self.char_post.pop()
         else:
             self.primary.value += self.typed[symbol]
-            self.char_post.append(np.array(post.log_p))
+            self.char_post.append(dict(self._top(post.log_p, len(self.rep.symbols), typed=True)))
 
     def _decide(self, why: str):
         cur = self.current
@@ -511,11 +640,16 @@ class ExternalSession:
             usable = bool((cur["obs"].module_metrics or {}).get("usable", True))
             symbol = decision.symbol if usable else None
             uncertain = decision.uncertain or not usable
+            target = cur["target"]
+            correct = (None if target is None or symbol is None or symbol == BACKSPACE
+                       else self.typed[symbol] == target)
             cur["timeline"]["decided_lsl"] = self.transport.now()
             self.rec.emit("Primary Symbol Detector", "symbol_decided",
                           {"symbol": symbol, "typed": self.typed.get(symbol) if symbol else None,
                            "confidence": decision.confidence, "margin": decision.margin,
                            "uncertain": uncertain, "cold_start": decision.cold_start,
+                           "target_symbol": target, "target_position": cur["target_position"],
+                           "correct": correct, "n_symbols": len(self.rep.symbols),
                            "abstained": symbol is None}, eid)
             target = cur["target"]
             if symbol is not None:
@@ -544,14 +678,15 @@ class ExternalSession:
                           {"primary_text": self.primary.value, "secondary_text": self.secondary.value,
                            "candidates_shown": self._top(post.log_p, 3), "status": "selected" if symbol else "retry"},
                           eid)
-            correct = None if target is None or symbol is None else self.typed[symbol] == target
             self.log.append({"epoch_id": eid, "position": position, "target": target, "decided": symbol,
+                             "n_symbols": len(self.rep.symbols),
                              "typed": self.typed.get(symbol) if symbol else None,
                              "top": self._top(post.log_p, int(self.opts["top_k_display"])),
                              "confidence": round(decision.confidence, 4), "uncertain": bool(uncertain),
                              "correct": correct, "flashes": cur["flashes"], "updates": cur["updates"],
                              "stopped_early": cur["stop_sent"], "decided_on": why,
                              "duration_s": round(time.monotonic() - cur["began"], 2)})
+            self.metric_rows.append(dict(self.log[-1]))
             del self.log[:-LOG_LIMIT]
             self.epoch_id += 1
             self.phase = "result"
@@ -569,17 +704,19 @@ class ExternalSession:
     def _abort(self, reason: str):
         with self.lock:
             self.rec.emit("One Epoch", "epoch_aborted", {"reason": reason}, self.current["epoch_id"])
-            if reason in ("no_likelihood", "timeout"):
+            if reason in ("no_likelihood", "timeout", "user_stop"):
                 self.transport.send({"cmd": "result", "epoch": self.current["epoch_id"], "symbol": None,
                                      "reason": reason})
                 self.current["timeline"]["result_sent_lsl"] = self.transport.now()
                 self._emit_timeline(self.current)
                 self.log.append({"epoch_id": self.current["epoch_id"], "position": self.current["position"],
                                  "target": self.current["target"], "decided": None, "typed": None,
+                                 "n_symbols": len(self.rep.symbols),
                                  "confidence": None, "uncertain": True, "correct": None,
                                  "flashes": self.current["flashes"], "updates": 0, "stopped_early": False,
                                  "decided_on": reason,
                                  "duration_s": round(time.monotonic() - self.current["began"], 2)})
+                self.metric_rows.append(dict(self.log[-1]))
                 self.epoch_id += 1
                 self.retry += 1
             self.phase = "result"
@@ -625,7 +762,7 @@ class ExternalSession:
             chars = []
             for j in range(span.start(), span.end()):
                 lp = self.char_post[j] if j < len(self.char_post) else None
-                chars.append([] if lp is None else self._top(lp, k, typed=True))
+                chars.append([] if lp is None else [[s, p] for s, p in sorted(lp.items(), key=lambda x: -x[1])[:k]])
             out.append(chars)
         return out
 
@@ -733,6 +870,13 @@ class ExternalSession:
             if self.current is not None and self.phase == "presenting":
                 self.rec.emit("One Epoch", "epoch_aborted", {"reason": reason}, self.current["epoch_id"])
             status = "failed" if self.error else "completed"
+            now = self.ended_wall = time.monotonic()
+            elapsed = max(0, now - self.started_wall) if self.started_wall else 0
+            pause = self.paused_seconds + (now - self.pause_started if self.pause_started else 0)
+            final_stats = performance(self.metric_rows, self.target, self.primary.value,
+                                      self.secondary.value, max(0, elapsed - pause))
+            (self.storage.directory / "derived" / "operator_metrics.json").write_text(
+                json.dumps(final_stats, ensure_ascii=False, indent=2), encoding="utf-8")
             self.rec.emit("Session Recorder", "session_ended",
                           {"status": status, "reason": reason, "n_epochs": self.epoch_id,
                            "n_events": self.rec.seq + 1})
@@ -742,7 +886,6 @@ class ExternalSession:
                                 self.epoch_id, count, status=status)
             self.transport.close()
             self.end_reason = reason
-            self.ended_wall = time.monotonic()
             self.finished = True
             self.phase = "finished"
         self._bump()
@@ -782,7 +925,7 @@ class ExternalSession:
                 post = cur.get("post")
                 obs = cur.get("obs")
                 epoch = {"epoch_id": cur["epoch_id"], "target": cur["target"], "flashes": cur["flashes"],
-                         "updates": cur["updates"], "stop_sent": cur["stop_sent"],
+                         "updates": cur["updates"], "stop_sent": cur["stop_sent"], "trials": len(cur["trial_distributions"]),
                          "elapsed_s": round(time.monotonic() - cur["began"], 1),
                          "prior_top": self._top_dicts(cur["prior"].log_p, k),
                          "likelihood_top": self._top_dicts(obs.log_p, k) if obs is not None else [],
@@ -790,11 +933,12 @@ class ExternalSession:
                          "leader": self._top_dicts(post.log_p, 1)[0] if post is not None else None,
                          "words": [w[0] if isinstance(w, (list, tuple)) else w for w in (cur["words"] or [])][:5],
                          "prior_ms": round(cur["prior_ms"], 1)}
-            decided = [r for r in self.log if r["decided"] is not None]
-            judged = [r for r in decided if r["correct"] is not None]
             end = self.ended_wall or time.monotonic()
-            minutes = ((end - self.started_wall) / 60) if self.started_wall else 0
-            matching = sum(a == b for a, b in zip(self.primary.value, self.target)) if self.target else None
+            elapsed = max(0.0, end - self.started_wall) if self.started_wall else 0.0
+            pause = self.paused_seconds + (end - self.pause_started if self.pause_started else 0)
+            seconds = max(0.0, elapsed - pause)
+            stats = performance(self.metric_rows, self.target, self.primary.value, self.secondary.value, seconds)
+            stats['pending_corrections'] = self.correction_queue.unfinished_tasks if self.slow else 0
             return {
                 "session_id": self.session_id, "profile": self.profile, "passport": self.passport,
                 "participant_id": self.cfg.participant_id, "task_id": self.cfg.task_id,
@@ -807,13 +951,13 @@ class ExternalSession:
                 "stop_confidence": self.opts["stop_confidence"], "tau": float(self.cfg.detector["tau"]),
                 "modules": self.transport.status(),
                 "elapsed_s": round((end - self.started_wall), 1) if self.started_wall else 0,
-                "stats": {"selected": len(decided), "epochs": len(self.log),
-                          "accuracy": round(sum(bool(r["correct"]) for r in judged) / len(judged), 3) if judged else None,
-                          "early_stops": sum(bool(r["stopped_early"]) for r in self.log),
-                          "mean_epoch_s": round(float(np.mean([r["duration_s"] for r in self.log])), 2) if self.log else None,
-                          "speed_cpm": round(matching / minutes, 2) if matching is not None and minutes > 0.05 else None,
-                          "pending_corrections": self.correction_queue.unfinished_tasks if self.slow else 0},
-                "log": self.log[-30:], "corrections": self.corrections[-50:],
+                "stats": stats,
+                "log": self.log[:], "corrections": self.corrections[-50:],
+                "activity": sorted(self.activity, key=lambda e: e['seq']),
+                "slow_enabled": self.slow is not None,
+                "slow_status": ("off" if self.slow is None else "pending" if stats['pending_corrections']
+                                else "waiting" if not self.corrections
+                                else "changed" if self.primary.value != self.secondary.value else "unchanged"),
                 "directory": str(self.storage.directory),
             }
 

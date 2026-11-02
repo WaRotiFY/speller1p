@@ -1,4 +1,4 @@
-"""Speller side of the ``speller-link@1`` protocol (see stimulus_kit/speller_link.py).
+"""Speller side of the ``speller-link@2`` protocol (see stimulus_kit/speller_link.py).
 
 The core publishes commands and receives two kinds of messages:
 - ``stimuli``: flash markers / "done" events from stimulus modules (logged only);
@@ -15,7 +15,7 @@ import queue
 import threading
 import time
 
-PROTOCOL = "speller-link@1"
+PROTOCOL = "speller-link@2"
 CONTROL_STREAM = "SpellerControl"
 STIMULI_STREAM = "SpellerStimuli"
 LIKELIHOOD_STREAM = "SpellerLikelihood"
