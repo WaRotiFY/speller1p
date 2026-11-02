@@ -76,7 +76,10 @@ def main():
     def events():
         pressed = False
         for ev in pygame.event.get():
-            if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                if link.epoch is not None:
+                    link.user_stop()
+            if ev.type == pygame.QUIT:
                 if not state["quit"]:
                     print("module: " + ("window closed" if ev.type == pygame.QUIT else "Esc pressed"),
                           file=sys.stderr, flush=True)
@@ -101,7 +104,7 @@ def main():
     def hold(until, rows, **kw):
         """Keep drawing until LSL time ``until``; True if SPACE was pressed meanwhile."""
         pressed = False
-        while now() < until and not state["quit"]:
+        while now() < until and not state["quit"] and not link.epoch_cancelled():
             pressed |= events()
             if kw:
                 draw(rows, **kw)
@@ -137,7 +140,9 @@ def main():
         draw(rows, text=epoch.text)
         pygame.display.flip()
 
-        for group in flash_order(groups, n_trials, int(cfg.get("min_gap", 1)), rng):
+        for flash_index, group in enumerate(flash_order(groups, n_trials, int(cfg.get("min_gap", 1)), rng), 1):
+            if link.should_stop():
+                break
             draw(rows, lit=group, text=epoch.text)
             pygame.display.flip()                 # with vsync: returns at the frame swap
             onset = link.flash(group)             # <- the one required call
@@ -149,10 +154,13 @@ def main():
             if decoder:
                 decoder.add_flash(group, pressed)
                 link.send_likelihood(decoder.probabilities())
+            if flash_index % len(groups) == 0 and not link.epoch_cancelled():
+                link.trial_done()
             if link.should_stop() or state["quit"]:
                 break
-        link.done()
-        if decoder:
+        if not link.epoch_cancelled():
+            link.done()
+        if decoder and not link.epoch_cancelled():
             link.send_likelihood(decoder.probabilities(), final=True)
         res = link.wait_result(timeout=5)
         chosen = res.get("symbol") if res else None
