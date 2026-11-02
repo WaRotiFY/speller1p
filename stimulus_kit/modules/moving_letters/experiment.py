@@ -1,4 +1,4 @@
-"""Движение букв: стимул — начало движения буквы (контракт speller-link@1).
+"""Движение букв: стимул — начало движения буквы (контракт speller-link@2).
 
 Каждая буква в случайный момент (задержка t1) сдвигается и возвращается (длительность t0).
 Места, где модуль общается со спеллером, помечены комментарием «SPELLER-LINK»:
@@ -135,7 +135,10 @@ class Experiment:
         """Window events; returns True if SPACE was pressed."""
         pressed = False
         for event in pygame.event.get():
-            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                if self.link.epoch is not None:
+                    self.link.user_stop()
+            if event.type == pygame.QUIT:
                 if not self.quit:
                     print("module: " + ("window closed" if event.type == pygame.QUIT else "Esc pressed"),
                           file=sys.stderr, flush=True)
@@ -160,7 +163,7 @@ class Experiment:
 
     def hold(self, seconds, draw=None):
         end = pygame.time.get_ticks() + seconds * 1000
-        while pygame.time.get_ticks() < end and not self.quit:
+        while pygame.time.get_ticks() < end and not self.quit and not self.link.epoch_cancelled():
             self.events()
             if draw:
                 draw()
@@ -184,6 +187,7 @@ class Experiment:
         self.w, self.h = self.width // self.n_cols, self.height // self.n_rows
 
         self.cells = {}
+        self.completed_trials = 0
 
         self.amplitude_x_scale = self.data_config['amplitude_x_scale']
 
@@ -225,13 +229,13 @@ class Experiment:
                                self.draw_letter(self.cells[cue], col=self.cue_color)))
 
         if self.data_config.get('start_by_space'):
-            while not self.quit and not self.events():
+            while not self.quit and not self.link.should_stop() and not self.events():
                 self.screen.fill(self.background)
                 pygame.display.flip()
                 self.clock.tick(self.FPS)
 
         t0 = pygame.time.get_ticks()
-        while not self.quit:
+        while not self.quit and not self.link.epoch_cancelled():
 
             self.clock.tick(self.FPS)
             pressed = self.events()
@@ -289,18 +293,23 @@ class Experiment:
                     if self.decoder:
                         self.decoder.add_onset([char], onset)
             if self.decoder and self.decoder.update(self.link_now()):
-                self.link.send_likelihood(self.decoder.probabilities())
+                self.link.send_likelihood(self.decoder.probabilities(), through_flash=self.decoder.evaluated)
 
             # SPELLER-LINK: end when every letter made num_samples movements (the module
             # does not know the target) or when the speller is confident enough.
             # IMPROV[Q-43]
-            if min(p['n_samp'] for p in self.cells.values()) >= self.num_samples or self.link.should_stop():
+            completed = min(p['n_samp'] for p in self.cells.values())
+            while self.completed_trials < completed and not self.link.epoch_cancelled():
+                self.link.trial_done()
+                self.completed_trials += 1
+            if completed >= self.num_samples or self.link.should_stop():
                 break
 
-        self.link.done()
-        if self.decoder:
+        if not self.link.epoch_cancelled():
+            self.link.done()
+        if self.decoder and not self.link.epoch_cancelled():
             self.decoder.update(self.link_now() + 10)
-            self.link.send_likelihood(self.decoder.probabilities(), final=True)
+            self.link.send_likelihood(self.decoder.probabilities(), final=True, through_flash=self.decoder.evaluated)
         res = self.link.wait_result(timeout=5)
         chosen = res.get('symbol') if res else None
         self.f.write(f'epoch {epoch.id} result {chosen}\n')
