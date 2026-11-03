@@ -25,9 +25,11 @@ import gzip
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import time
+import urllib.error
 import urllib.request
 
 import numpy as np
@@ -44,6 +46,11 @@ MODEL_SUFFIXES = (".binary", ".bin", ".klm", ".arpa", ".arpa.gz")
 
 # Progress of a running download, shown in the operator window.
 download_status: dict = {}
+
+
+def hf_endpoint() -> str:
+    """Hugging Face address; a mirror is set the same way as for huggingface_hub: HF_ENDPOINT."""
+    return os.environ.get("HF_ENDPOINT", "https://huggingface.co").rstrip("/")
 
 
 def _is_model_file(name: str) -> bool:
@@ -79,9 +86,30 @@ def fetch_hf_repo(repo: str, allow_download: bool) -> Path:
     manifest = folder / "files.json"
     if manifest.is_file():
         return folder
+    if folder.is_dir() and any(_is_model_file(p.name) for p in folder.iterdir()):
+        # Files put there by hand (no internet on this computer): use them as they are.
+        manifest.write_text(json.dumps({"repo": repo, "source": "manual", "files": sorted(p.name for p in folder.iterdir()),
+                                        "downloaded": time.strftime("%Y-%m-%d")}, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+        return folder
     if not allow_download:
         raise ValueError(f"{repo} is not downloaded yet: tick 'allow download' (about 1.5 GB)")
-    with urllib.request.urlopen(f"https://huggingface.co/api/models/{repo}", timeout=30) as resp:
+    try:
+        return _fetch(repo, folder, manifest)
+    except (urllib.error.URLError, OSError) as exc:
+        download_status.clear()
+        reason = getattr(exc, "reason", exc)
+        raise ValueError(
+            f"не удалось скачать {repo} с {hf_endpoint()}: {reason}. Нет интернета или сайт недоступен из этой сети. "
+            f"Варианты: проверить интернет и прокси; задать зеркало переменной HF_ENDPOINT (например "
+            f"https://hf-mirror.com) и перезапустить спеллер; скачать на другом компьютере файлы "
+            f"language_model/lm.binary и language_model/unigrams.txt и положить их в models/kenlm/"
+            f"{repo.replace('/', '__')}/; или выбрать 4-грамму — она работает без сети") from exc
+
+
+def _fetch(repo: str, folder: Path, manifest: Path) -> Path:
+    base = hf_endpoint()
+    with urllib.request.urlopen(f"{base}/api/models/{repo}", timeout=30) as resp:
         info = json.load(resp)
     names = [s["rfilename"] for s in info.get("siblings", [])]
     models = [n for n in names if _is_model_file(n)]
@@ -93,7 +121,7 @@ def fetch_hf_repo(repo: str, allow_download: bool) -> Path:
     for name in wanted:
         dest = folder / Path(name).name
         if not dest.exists():
-            _download(f"https://huggingface.co/{repo}/resolve/main/{name}", dest, Path(name).name)
+            _download(f"{base}/{repo}/resolve/main/{name}", dest, Path(name).name)
     manifest.write_text(json.dumps({"repo": repo, "files": wanted, "license": (info.get("cardData") or {}).get("license"),
                                     "sha": info.get("sha"), "downloaded": time.strftime("%Y-%m-%d")},
                                    ensure_ascii=False, indent=2), encoding="utf-8")

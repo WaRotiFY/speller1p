@@ -38,3 +38,11 @@ pip install .
 - **Windows:** нужны «Build Tools for Visual Studio» с компонентом «Разработка классических приложений на C++». На Windows эта сборка пока не проверялась.
 
 Если пакет не установлен, окно оператора пишет об этом в блоке «быстрая БЯМ», а остальные модели работают как раньше.
+
+## Без интернета или без доступа к Hugging Face
+
+Если при старте сессии появилось «не удалось скачать … с https://huggingface.co», компьютер не может связаться с Hugging Face. Ошибка `getaddrinfo failed` означает, что не найден сам адрес сайта: нет сети, сайт закрыт в этой сети или нужен прокси. Что можно сделать:
+
+1. **Зеркало.** Перед запуском спеллера задайте адрес зеркала, например `$env:HF_ENDPOINT = "https://hf-mirror.com"` в PowerShell или `set HF_ENDPOINT=https://hf-mirror.com` в cmd. Эту же переменную понимает и вариант «HF» (transformers).
+2. **Вручную.** На компьютере с интернетом скачайте со страницы модели файлы `language_model/lm.binary` и `language_model/unigrams.txt` и положите их в папку `models/kenlm/<владелец>__<имя>/`. Для английской модели это `models/kenlm/jonatasgrosman__wav2vec2-large-xlsr-53-english/`, для русской — `models/kenlm/jonatasgrosman__wav2vec2-large-xlsr-53-russian/`. Спеллер возьмёт их без скачивания.
+3. **Буквенная 4-грамма** (`ru_char4.npz`, `en_char4.npz`) лежит в репозитории и работает без сети.
