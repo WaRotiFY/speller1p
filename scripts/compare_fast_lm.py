@@ -69,7 +69,7 @@ def evaluate(model) -> dict:
             top1 += int(order[0] == k)
             top3 += int(k in order[:3])
             n += 1
-        for m in re.finditer(r"[а-я]+", text):
+        for m in re.finditer(r"[а-яa-z]+", text):
             if m.start() == 0 or text[m.start() - 1] != " ":
                 continue
             cands = [w for w, _ in model.top_words(text[:m.start()], 10)]

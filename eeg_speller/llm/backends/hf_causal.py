@@ -15,7 +15,8 @@ import hashlib
 import re
 
 from eeg_speller.core.distributions import SymbolDistribution, log_probs
-from eeg_speller.core.keyboard import LM_ALPHABET, keyboard_text, project
+from eeg_speller.core.keyboard import keyboard_text, project
+from eeg_speller.core.language import lm_alphabet
 from eeg_speller.llm.char_marginal import marginalize_token_paths
 
 
@@ -60,7 +61,7 @@ class HFCausal:
 
     def _beam_paths(self, context):
         text = keyboard_text(context)
-        match = re.search(r"[а-я]+$", text)
+        match = re.search(r"[а-яa-z]+$", text)
         prefix = match.group() if match else ""
         healed = text[:-len(prefix)] if prefix else text
         base = self.tokenizer(healed or " ", add_special_tokens=False).input_ids or [self.tokenizer.eos_token_id]
@@ -98,7 +99,7 @@ class HFCausal:
         # ASSUMPTION[MA-09]
         # This adapter requires full vocabulary logits; it never uses top-k API logprobs.
         prefix, paths = self._beam_paths(context)
-        lm = marginalize_token_paths(paths, prefix, tuple(LM_ALPHABET) + ("⌫",), 0.0)[:-1]
+        lm = marginalize_token_paths(paths, prefix, tuple(lm_alphabet()) + ("⌫",), 0.0)[:-1]
         p = project(lm, repertoire.symbols, float(self.cfg["char_marginal"]["backspace_prob"]),
                     float(self.cfg.get("other_prob", 0.005)))
         return SymbolDistribution(repertoire, log_probs(p), f"fast_llm:{self.model_id}", len(context))
@@ -114,7 +115,7 @@ class HFCausal:
             end = re.search(r"[ .,]", rest)
             if end:
                 word = prefix + rest[:end.start()]
-                if word and re.fullmatch(r"[а-я]+", word):
+                if word and re.fullmatch(r"[а-яa-z]+", word):
                     masses[word] += mass
         total = sum(masses.values())
         if not total:

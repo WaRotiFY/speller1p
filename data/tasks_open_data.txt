@@ -1,0 +1,9 @@
+# Phrases spelled in the open EEG recordings of stimulus_kit/tools/open_data (offered in every language).
+# Use them as the task when the module "Проигрывание записи ЭЭГ" plays that recording: the speller
+# then counts accuracy against what the participant really spelled. Latin 6×6 keyboard, '_' = space.
+# BNCI 2014-008 (8 ALS patients, Italian words): symbols 16-35 after calibration on 1-15; the whole recording.
+BNCI008_TEST	gattomenteviolarebus
+BNCI008_ALL	2baci5rosezuppagattomenteviolarebus
+# BCI Competition II, data set IIb (Wadsworth, English words): session 12 after calibration on sessions 10-11.
+BCI2B_TEST	foodmoothampiecaketunazygot4567
+BCI2B_TRAIN	catdogfishwaterbowlhathatgloveshoesfishrat

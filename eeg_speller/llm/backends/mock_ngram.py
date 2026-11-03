@@ -32,7 +32,7 @@ class MockNGram:
         self.model_id = cfg["model_id"]
         self.counts = [defaultdict(Counter) for _ in range(self.order)]
         continuation_sets = [defaultdict(lambda: defaultdict(set)) for _ in range(self.order - 1)]
-        self.vocab = Counter(re.findall(r"[а-я]+", text))
+        self.vocab = Counter(re.findall(r"[а-яa-z]+", text))
         for i, ch in enumerate(text):
             for n in range(self.order):
                 context = text[max(0, i - n):i]
@@ -59,8 +59,9 @@ class MockNGram:
 
     def predict(self, context, repertoire):
         # ASSUMPTION[MA-08]
-        from eeg_speller.core.keyboard import LM_ALPHABET, keyboard_text, project
-        lm = self._dist(_context(keyboard_text(context)), tuple(LM_ALPHABET))
+        from eeg_speller.core.keyboard import keyboard_text, project
+        from eeg_speller.core.language import lm_alphabet
+        lm = self._dist(_context(keyboard_text(context)), tuple(lm_alphabet()))
         probs = project(lm, repertoire.symbols, float(self.cfg["char_marginal"]["backspace_prob"]),
                         float(self.cfg.get("other_prob", 0.005)))
         return SymbolDistribution(repertoire, log_probs(probs), f"fast_llm:{self.model_id}", len(context))
@@ -74,7 +75,8 @@ class MockNGram:
         for word in candidates:
             state = clean
             score = 0.0
-            symbols = tuple("абвгдежзийклмнопрстуфхцчшщъыьэюя .,")
+            from eeg_speller.core.language import lm_alphabet
+            symbols = tuple(lm_alphabet())
             for ch in word[len(prefix):] + " ":
                 p = self._dist(state, symbols)
                 # Use a floor if the candidate character is outside the model vocabulary.

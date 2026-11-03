@@ -1,4 +1,5 @@
 seed: 20260929
+language: ru                    # ru | en: LM alphabet, default models, tasks, slow-LM prompt (eeg_speller/core/language.py)
 participant_id: SIM-001
 experiment_id: null
 task_id: T001
@@ -39,8 +40,9 @@ slow_llm:
   temperature: 0
   include_alternatives: false
   alternatives_k: 4
-  trigger: word_end
-  every_n_words: 1
+  trigger: every_n_chars        # every_n_chars: every N typed characters, spaces or not; word_end: at word ends
+  every_n_chars: 20
+  every_n_words: 1              # word_end only
   window_words: 3
   min_context_words: 1
   strict_word_count: true

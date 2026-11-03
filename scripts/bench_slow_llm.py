@@ -37,7 +37,7 @@ from eeg_speller.core.keyboard import typed_char  # noqa: E402
 from eeg_speller.llm.backends import chat_api  # noqa: E402
 from eeg_speller.llm.slow import align_correction, validate_correction  # noqa: E402
 
-WORD = re.compile(r"[а-я]+")
+WORD = re.compile(r"[а-яa-z]+")
 
 
 class Recorder:

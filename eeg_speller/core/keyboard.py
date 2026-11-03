@@ -2,7 +2,7 @@
 
 The speller owns the keyboard: symbols and rows x columns come from the config and are
 sent to the stimulus module in every ``epoch_start``. Language models work in a fixed
-lowercase alphabet; keyboard symbols are mapped into it:
+lowercase alphabet of the session language (``core.language``); keyboard symbols are mapped into it:
 
 - uppercase -> lowercase, ``ё`` -> ``е``, ``_`` / ``␣`` -> space;
 - ``⌫`` (delete) gets a fixed probability ``backspace_prob``;
@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import numpy as np
 
-LM_ALPHABET = "абвгдежзийклмнопрстуфхцчшщъыьэюя .,"
+from eeg_speller.core.language import lm_alphabet
+
+LM_ALPHABET = "абвгдежзийклмнопрстуфхцчшщъыьэюя .,"   # Russian; the session's alphabet is lm_alphabet()
 BACKSPACE = "⌫"
 SPACE_ALIASES = {"_": " ", "␣": " "}
 
@@ -40,7 +42,7 @@ def lm_char(symbol: str) -> str | None:
     if symbol == BACKSPACE:
         return None
     s = SPACE_ALIASES.get(symbol, symbol).lower().replace("ё", "е")
-    return s if len(s) == 1 and s in LM_ALPHABET else None
+    return s if len(s) == 1 and s in lm_alphabet() else None
 
 
 def typed_char(symbol: str) -> str:
@@ -69,7 +71,7 @@ def symbol_for_char(ch: str, symbols) -> str | None:
 
 
 def project(lm_p, symbols, backspace_prob: float = 0.02, other_prob: float = 0.005) -> np.ndarray:
-    """Probabilities over LM_ALPHABET -> probabilities over keyboard ``symbols``.
+    """Probabilities over lm_alphabet() -> probabilities over keyboard ``symbols``.
 
     Symbols mapping to the same LM character (``Е`` and ``Ё``) share its mass. Characters
     of the LM that are not on the keyboard are dropped and the rest renormalized.
@@ -78,6 +80,7 @@ def project(lm_p, symbols, backspace_prob: float = 0.02, other_prob: float = 0.0
     lm_p = np.asarray(lm_p, dtype=float)
     out = np.zeros(len(symbols))
     groups: dict[int, list[int]] = {}
+    alphabet = lm_alphabet()
     fixed = 0.0
     for i, s in enumerate(symbols):
         c = lm_char(s)
@@ -88,7 +91,7 @@ def project(lm_p, symbols, backspace_prob: float = 0.02, other_prob: float = 0.0
             out[i] = other_prob
             fixed += other_prob
         else:
-            groups.setdefault(LM_ALPHABET.index(c), []).append(i)
+            groups.setdefault(alphabet.index(c), []).append(i)
     free = max(0.0, 1.0 - fixed)
     mass = sum(lm_p[j] for j in groups)
     for j, idx in groups.items():
@@ -102,8 +105,9 @@ def project(lm_p, symbols, backspace_prob: float = 0.02, other_prob: float = 0.0
 def keyboard_text(text: str) -> str:
     """Typed text -> LM text (unknown characters dropped)."""
     out = []
+    alphabet = lm_alphabet()
     for ch in text:
-        c = lm_char(ch) if ch not in LM_ALPHABET else ch
+        c = lm_char(ch) if ch not in alphabet else ch
         if c:
             out.append(c)
     return "".join(out)

@@ -37,12 +37,15 @@ def _vocab(path: str):
     return words, logf, by_len
 
 
-def candidates(word: str, letters, k: int = 4, vocab: Path = DEFAULT_VOCAB, beta: float = BETA,
+def candidates(word: str, letters, k: int = 4, vocab: Path | None = None, beta: float = BETA,
                floor: float = FLOOR) -> list[tuple[str, float]]:
     """Up to ``k`` (word, share) pairs; the typed word itself is included when it is a word."""
     # ASSUMPTION[MA-37]
     if not word or not letters or len(letters) != len(word):
         return []
+    if vocab is None:                    # word list of the session language's character n-gram
+        from eeg_speller.llm.backends.char_ngram import default_model
+        vocab = default_model()
     words, logf, by_len = _vocab(str(vocab))
     if len(word) not in by_len:
         return []
@@ -67,7 +70,8 @@ def format_candidates(window: list[str], letters, k: int = 4) -> str:
     """Prompt lines 'typed: cand1 61, cand2 30, …' for the words of a correction window."""
     if not letters:
         return ""
-    lines = ["Похожие слова из словаря:"]
+    from eeg_speller.core.language import current
+    lines = ["Похожие слова из словаря:" if current().code == "ru" else "Similar dictionary words:"]
     for word, chars in zip(window, letters):
         cands = candidates(word, chars, k)
         if cands:

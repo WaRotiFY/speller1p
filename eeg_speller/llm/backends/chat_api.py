@@ -27,7 +27,7 @@ USER_PROMPT = PROMPTS / "user" / "correction.txt"
 KEYS_FILE = Path(os.environ.get("EEG_SPELLER_HOME", Path.home() / ".eeg_speller")) / "keys.json"
 SPLIT = "---- сообщение ----"
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
-WORD = re.compile(r"[а-я]+")
+WORD = re.compile(r"[а-яa-z]+")
 
 PROVIDERS = {
     "ollama": {"label": "Ollama на этом компьютере", "base_url": "http://127.0.0.1:11434/v1",
@@ -144,21 +144,34 @@ def list_models(provider: str, base_url: str | None = None, only_free: bool = Tr
 
 
 # ------------------------------------------------------------------------- prompt
+def default_prompt_file() -> Path:
+    """Prompt of the session language (prompts/correction_v3.txt — Russian, correction_en.txt — English)."""
+    from eeg_speller.core.language import path as lang_path
+    p = lang_path("prompt_file")
+    return p if p.is_file() else DEFAULT_PROMPT
+
+
+def user_prompt_file() -> Path:
+    """The operator's edited prompt; one per language (Russian keeps the old name)."""
+    from eeg_speller.core.language import current
+    return USER_PROMPT if current().code == "ru" else USER_PROMPT.with_name(f"correction_{current().code}.txt")
+
+
 def read_prompt(which: str = "current") -> str:
-    if which == "current" and USER_PROMPT.is_file():
-        return USER_PROMPT.read_text(encoding="utf-8")
-    return DEFAULT_PROMPT.read_text(encoding="utf-8")
+    if which == "current" and user_prompt_file().is_file():
+        return user_prompt_file().read_text(encoding="utf-8")
+    return default_prompt_file().read_text(encoding="utf-8")
 
 
 def save_prompt(text: str) -> None:
     check_template(text)
-    USER_PROMPT.parent.mkdir(parents=True, exist_ok=True)
-    USER_PROMPT.write_text(text, encoding="utf-8")
+    user_prompt_file().parent.mkdir(parents=True, exist_ok=True)
+    user_prompt_file().write_text(text, encoding="utf-8")
 
 
 def reset_prompt() -> None:
-    if USER_PROMPT.is_file():
-        USER_PROMPT.unlink()
+    if user_prompt_file().is_file():
+        user_prompt_file().unlink()
 
 
 def split_template(text: str) -> tuple[str, str]:
@@ -184,7 +197,8 @@ def format_alternatives(words: list[str], letters: list[list[list]] | None) -> s
     """letters[i][j] = [[symbol, p], ...] for character j of word i (top-K of the posterior)."""
     if not letters:
         return ""
-    lines = ["Варианты букв:"]
+    from eeg_speller.core.language import current
+    lines = ["Варианты букв:" if current().code == "ru" else "Letter alternatives:"]
     for word, chars in zip(words, letters):
         parts = []
         for ch, alts in zip(word, chars):
@@ -198,7 +212,9 @@ def format_alternatives(words: list[str], letters: list[list[list]] | None) -> s
 
 def build_messages(template: str, left_context: str, window: list[str], letters=None) -> list[dict]:
     system, user = split_template(template)
-    text = user.format(context=left_context.strip() or "(начало текста)", n=len(window),
+    from eeg_speller.core.language import current
+    start = "(начало текста)" if current().code == "ru" else "(start of text)"
+    text = user.format(context=left_context.strip() or start, n=len(window),
                        words=" ".join(window), alternatives=format_alternatives(window, letters),
                        candidates=format_candidates(window, letters) if "{candidates}" in user else "")
     return [{"role": "system", "content": system}, {"role": "user", "content": text.strip()}]

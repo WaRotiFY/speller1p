@@ -22,6 +22,7 @@
       <h2><span class="num">0</span>сессия</h2>
       <div class="grid">
         <label>участник <input id="participant" value="P001" maxlength="32" autocomplete="off"></label>
+        <label>язык <select id="language"></select></label>
         <label>задание
           <select id="task">
             <option value="free">свободный набор</option>
@@ -97,8 +98,15 @@
         <p id="models-info" class="muted small"></p>
       </div>
       <div class="settings-grid">
-        <label>исправлять каждые N слов <input id="every-n" type="number" min="1" max="20" value="1"></label>
-        <label>окно: последние W слов <input id="window-w" type="number" min="1" max="20" value="3"></label>
+        <label>запускать
+          <select id="slow-trigger">
+            <option value="every_n_chars">каждые N символов (с пробелами и без)</option>
+            <option value="word_end">в конце слова</option>
+          </select>
+        </label>
+        <label id="every-chars-row">каждые N символов <input id="every-chars" type="number" min="3" max="200" value="20"></label>
+        <label id="every-n-row" class="hidden">каждые N слов <input id="every-n" type="number" min="1" max="20" value="1"></label>
+        <label id="window-w-row" class="hidden">окно: последние W слов <input id="window-w" type="number" min="1" max="20" value="3"></label>
         <label class="check"><input type="checkbox" id="alts" checked> передавать варианты букв</label>
         <label>вариантов на букву <input id="alts-k" type="number" min="1" max="10" value="4"></label>
       </div>
