@@ -125,8 +125,9 @@ class NoScreen:
         pass
 
 
-def main():
-    args = module_args(__doc__, str(HERE / "settings.json"))
+def main(default_settings: Path = HERE / "settings.json"):
+    """Run with ``default_settings`` (other recordings: a module folder with its own settings.json)."""
+    args = module_args(__doc__, str(default_settings))
     cfg = args.config
     from eeg_source import MarkerMap, eeg_outlet, load
 
@@ -141,6 +142,8 @@ def main():
     first = int(cfg.get("first_symbol", n_cal) if cfg.get("first_symbol") is not None else n_cal)
     print(f"запись {edf.name}: {len(epochs)} символов, {len(rec.ch_names)} кан., {rec.srate:g} Гц; "
           f"проигрываю с символа {first + 1}", flush=True)
+    task = "".join(e["cue"] or "?" for e in epochs[first:])
+    print(f"задание этой части записи (для сверки выберите его в окне оператора): {task}", flush=True)
     data = rec.read(0, rec.n_samples)                  # (n, ch), µV
     fs = rec.srate
 

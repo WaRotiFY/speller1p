@@ -226,3 +226,4 @@ models/kenlm/*/
 
 # Open EEG data downloaded by stimulus_kit/tools/open_data/get_*.py
 data/bnci2014_008/
+data/bci2_iib/
