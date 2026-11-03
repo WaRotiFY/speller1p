@@ -382,6 +382,8 @@ def make_handler(manager: Manager):
                 return self._send(400, {"error": install_hint(exc)})
             except (ValueError, TypeError, KeyError, PermissionError, json.JSONDecodeError) as exc:
                 return self._send(400, {"error": str(exc)})
+            except OSError as exc:                     # network or disk: say so instead of dropping the request
+                return self._send(400, {"error": f"{type(exc).__name__}: {exc}"})
 
         def log_message(self, fmt, *args):
             if not self.path.startswith("/api/"):

@@ -79,3 +79,15 @@ def test_slow_llm_every_n_characters():
         (10, ["i", "would"], 0), (20, ["like", "a"], 2), (30, ["glass", "of", "water"], 4), (40, ["please"], 7)]
     # text without spaces is still corrected: the whole run of letters
     assert requests("gattomenteviolarebus", 20) == [(20, ["gattomenteviolarebus"], 0)]
+
+
+def test_kenlm_without_internet_gives_a_clear_error_and_takes_files_put_by_hand(tmp_path, monkeypatch):
+    from eeg_speller.llm.backends import kenlm_words as k
+    monkeypatch.setattr(k, "CACHE", tmp_path)
+    monkeypatch.setenv("HF_ENDPOINT", "http://127.0.0.1:9")            # nothing listens there
+    with pytest.raises(ValueError, match="не удалось скачать.*4-грамму"):
+        k.fetch_hf_repo("owner/name", True)
+    folder = tmp_path / "owner__name"
+    folder.mkdir(exist_ok=True)
+    (folder / "lm.binary").write_bytes(b"kenlm")
+    assert k.fetch_hf_repo("owner/name", False) == folder               # no download needed
