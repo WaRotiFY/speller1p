@@ -21,7 +21,7 @@ import sys
 import numpy as np
 import scipy.io as sio
 
-MATRIX = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789_")   # BCI2000 6×6, row by row
+MATRIX = list("abcdefghijklmnopqrstuvwxyz123456789_")   # BCI2000 6×6, row by row; lower case like the speller
 FS = 256
 
 

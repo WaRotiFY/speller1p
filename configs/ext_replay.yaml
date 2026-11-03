@@ -1,0 +1,8 @@
+# Replay of a real EEG recording (stimulus_kit/modules/eeg_replay) with the speller core, no browser:
+#   uv run --no-sync python -m eeg_speller.external --profile configs/ext_replay.yaml --target "gattomenteviolarebus"
+# The recordings in stimulus_kit/tools/open_data use a Latin keyboard, so the Russian fast LM is off
+# (uniform prior); the operator window does the same with "без БЯМ".
+inherits: ext_default.yaml
+mode: {llm: "off"}
+fast_llm: {backend: uniform, model_id: uniform}
+slow_llm: {backend: mock_dictionary}
