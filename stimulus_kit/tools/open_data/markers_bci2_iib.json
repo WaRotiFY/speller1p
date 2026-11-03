@@ -1,0 +1,12 @@
+{
+ "_about": "Marker map for EDF+ made by bci2_iib_to_edf.py (BCI Competition II, data set IIb, Wadsworth, English words). BCI2000 6×6 matrix, lower case like the speller; '_' is the space.",
+ "symbols": ["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","1","2","3","4","5","6","7","8","9","_"],
+ "layout": [6, 6],
+ "epoch_start": ["epoch"],
+ "epoch_end": [],
+ "flash": [
+  {"match": "^R(\\d)$", "row_from_group": 1, "offset": 1},
+  {"match": "^C(\\d)$", "col_from_group": 1, "offset": 1}
+ ],
+ "cue": {"match": "^target:(.+)$"}
+}

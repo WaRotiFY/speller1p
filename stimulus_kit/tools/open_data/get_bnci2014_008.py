@@ -41,16 +41,16 @@ def sha1(path):
     return h.hexdigest()
 
 
-def fetch(n, out):
-    path = out / f"A{n:02d}.mat"
-    if path.is_file() and sha1(path) == SHA1[n]:
-        print(f"A{n:02d}.mat: already here")
+def download(name, sha, urls, out):
+    """``out/name`` from the first of ``urls`` whose file has SHA-1 ``sha``; kept if already there."""
+    path = out / name
+    if path.is_file() and sha1(path) == sha:
+        print(f"{name}: already here")
         return path
-    for url in SOURCES:
-        url = url.format(n=n)
+    for url in urls:
         tmp = path.with_suffix(".part")
         try:
-            print(f"A{n:02d}.mat ← {url}", flush=True)
+            print(f"{name} ← {url}", flush=True)
             req = urllib.request.Request(url, headers={"User-Agent": "eeg-speller-data-fetch"})
             with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
                 while block := r.read(1 << 20):
@@ -59,13 +59,17 @@ def fetch(n, out):
             print(f"  failed: {exc}")
             tmp.unlink(missing_ok=True)
             continue
-        if sha1(tmp) != SHA1[n]:
+        if sha1(tmp) != sha:
             print("  wrong checksum, trying the next source")
             tmp.unlink(missing_ok=True)
             continue
         os.replace(tmp, path)
         return path
-    sys.exit(f"A{n:02d}.mat: no source worked; download it by hand into {out}")
+    sys.exit(f"{name}: no source worked; download it by hand into {out}")
+
+
+def fetch(n, out):
+    return download(f"A{n:02d}.mat", SHA1[n], [u.format(n=n) for u in SOURCES], out)
 
 
 def main():

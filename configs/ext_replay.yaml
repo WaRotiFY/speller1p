@@ -1,8 +1,9 @@
-# Replay of a real EEG recording (stimulus_kit/modules/eeg_replay) with the speller core, no browser:
-#   uv run --no-sync python -m eeg_speller.external --profile configs/ext_replay.yaml --target "gattomenteviolarebus"
-# The recordings in stimulus_kit/tools/open_data use a Latin keyboard, so the Russian fast LM is off
-# (uniform prior); the operator window does the same with "без БЯМ".
+# Replay of a real EEG recording (stimulus_kit/modules/eeg_replay*) with the speller core, no browser:
+#   uv run --no-sync python -m eeg_speller.external --profile configs/ext_replay.yaml --target "foodmoothampiecaketunazygot4567"
+#   uv run --no-sync python stimulus_kit/modules/eeg_replay_bci2/main.py
+# The open recordings use a Latin keyboard: English language models. For the Italian words of
+# BNCI 2014-008 switch the language models off (mode: {llm: "off"}).
 inherits: ext_default.yaml
-mode: {llm: "off"}
-fast_llm: {backend: uniform, model_id: uniform}
-slow_llm: {backend: mock_dictionary}
+language: en
+fast_llm: {backend: ngram, model_file: en_char4.npz, model_id: en_char4}
+slow_llm: {backend: dictionary, model_id: dictionary-letters-1, trigger: every_n_chars, every_n_chars: 20}
