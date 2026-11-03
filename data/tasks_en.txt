@@ -1,0 +1,33 @@
+# English copy-spelling tasks (language "en"). Format: <task_id><TAB><text>; '#' starts a comment.
+# Lower case; only space, period and comma besides letters. These sentences are excluded
+# from the English training text of models/ngram/en_char4.npz.
+E001	hello, how are you today.
+E002	i would like a glass of water.
+E003	please call the nurse.
+E004	i want to rest for a while.
+E005	the weather is nice today.
+E006	open the window, it is stuffy here.
+E007	thank you for your help.
+E008	i am cold, bring me a blanket.
+E009	turn off the light, please.
+E010	my back hurts a little.
+E011	can you read the news to me.
+E012	i am hungry, what is for lunch.
+E013	please call my daughter.
+E014	the music is too loud.
+E015	i slept well last night.
+E016	what time is it now.
+E017	i need my glasses.
+E018	let us watch a film tonight.
+E019	the tea is too hot.
+E020	please help me sit up.
+E021	tell the doctor i feel better.
+E022	i would like to go outside.
+E023	bring me the remote control.
+E024	my phone needs charging.
+E025	i love you very much.
+E026	please close the door.
+E027	when will my brother come.
+E028	i do not want to eat now.
+E029	could you move the pillow.
+E030	the room is too warm.

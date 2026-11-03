@@ -1,8 +1,9 @@
-"""Train the default Russian character n-gram (interpolated Kneser-Ney) for the fast LM slot.
+"""Train a character n-gram (interpolated Kneser-Ney) for the fast LM slot, Russian or English.
 
-The result is a lookup table P(next char | previous n-1 chars) over the LM alphabet
-(32 letters with ё merged into е, space, period, comma) plus a word list for
-next-word candidates. It is saved as one compact ``.npz`` that ``ngram`` loads.
+The result is a lookup table P(next char | previous n-1 chars) over the LM alphabet of
+the language (``eeg_speller.core.language``: Russian — 32 letters with ё merged into е;
+English — 26 letters; plus space, period, comma) and a word list for next-word
+candidates. It is saved as one compact ``.npz`` that ``ngram`` loads.
 
 Sources used for the shipped model (see models/ngram/README.md):
 
@@ -12,8 +13,16 @@ Sources used for the shipped model (see models/ngram/README.md):
         --wordfreq FrequencyWords/content/2018/ru/ru_full.txt \
         --order 4 --out models/ngram/ru_char4.npz
 
-Any folder of UTF-8 ``.txt`` files works with ``--texts``. Sentences from
-``data/tasks_ru.txt`` are removed from the training text.
+English model (models/ngram/README.md):
+
+    python scripts/train_char_ngram.py --language en \
+        --parquet gutenberg_english/train-00000-*.parquet --parquet-max-mb 70 \
+        --wordfreq FrequencyWords/content/2018/en/en_full.txt --wordfreq-share 0.5 \
+        --order 4
+
+Any folder of UTF-8 ``.txt`` files works with ``--texts``; ``--parquet`` reads the TEXT
+column of Parquet files. Sentences of the language's task file (data/tasks_<lang>.txt)
+are removed from the training text and used for the bits-per-char estimate.
 """
 from __future__ import annotations
 
@@ -28,21 +37,41 @@ import time
 
 import numpy as np
 
-ALPHABET = "абвгдежзийклмнопрстуфхцчшщъыьэюя .,"
-SPACE = ALPHABET.index(" ")
-V = len(ALPHABET)
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from eeg_speller.core.language import LANGUAGES  # noqa: E402
 
-_table = {ord(c): c for c in ALPHABET}
-_table.update({ord(c.upper()): c for c in ALPHABET if c.isalpha()})
-_table.update({ord("ё"): "е", ord("Ё"): "е"})
-for ch in "!?;…":
-    _table[ord(ch)] = "."
-for ch in "\n\t\r -—–:()\"«»'/":
-    _table[ord(ch)] = " "
+LANG = LANGUAGES["ru"]
+ALPHABET = LANG.lm_alphabet
+V = len(ALPHABET)
+_table: dict[int, str] = {}
+_drop = re.compile("")
+_word = re.compile("")
 
 
-_drop = re.compile(r"[^а-я .,]")
+def setup(code: str):
+    """Alphabet, character map and patterns of the language (module globals)."""
+    global LANG, ALPHABET, V, _table, _drop, _word
+    LANG = LANGUAGES[code]
+    ALPHABET = LANG.lm_alphabet
+    V = len(ALPHABET)
+    _table = {ord(c): c for c in ALPHABET}
+    _table.update({ord(c.upper()): c for c in ALPHABET if c.isalpha()})
+    if code == "ru":
+        _table.update({ord("ё"): "е", ord("Ё"): "е"})
+    for ch in "!?;…":
+        _table[ord(ch)] = "."
+    for ch in "\n\t\r -—–:()\"«»/":
+        _table[ord(ch)] = " "
+    # Apostrophe: a quote mark in Russian texts (a space); in English "don't" -> "dont",
+    # because the keyboard has no apostrophe.
+    for ch in "'’`":
+        _table[ord(ch)] = "" if code == "en" else " "
+    _drop = re.compile(f"[^{LANG.letters} .,]")
+    _word = re.compile(f"[{LANG.letters}]+")
+
+
+setup("ru")
 
 
 def normalize(text: str) -> str:
@@ -144,7 +173,7 @@ def bits_per_char(table: np.ndarray, order: int, text: str) -> float:
 
 def task_sentences() -> set[str]:
     out = set()
-    for line in (ROOT / "data" / "tasks_ru.txt").read_text(encoding="utf-8").splitlines():
+    for line in (ROOT / LANG.tasks_file).read_text(encoding="utf-8").splitlines():
         if line and not line.startswith("#") and "\t" in line:
             out.add(normalize(line.split("\t", 1)[1]).strip(" ."))
     return out
@@ -157,7 +186,10 @@ def drop_tasks(text: str, tasks: set[str]) -> str:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--language", default="ru", choices=sorted(LANGUAGES), help="alphabet and task file")
     ap.add_argument("--lenta", type=Path, help="lenta-ru-news.csv(.bz2)")
+    ap.add_argument("--parquet", type=Path, action="append", default=[], help="Parquet file with a TEXT column")
+    ap.add_argument("--parquet-max-mb", type=float, default=0, help="stop reading Parquet after this many MB (0 = all)")
     ap.add_argument("--lenta-max-mb", type=float, default=0, help="stop after this many MB of text (0 = all)")
     ap.add_argument("--texts", type=Path, action="append", default=[], help="folder of .txt files")
     ap.add_argument("--wordfreq", type=Path, help="'word count' list (e.g. OpenSubtitles frequency list)")
@@ -165,8 +197,10 @@ def main():
                     help="share of all characters contributed by the frequency list")
     ap.add_argument("--order", type=int, default=4)
     ap.add_argument("--vocab", type=int, default=40000, help="words kept for next-word candidates")
-    ap.add_argument("--out", type=Path, default=ROOT / "models" / "ngram" / "ru_char4.npz")
+    ap.add_argument("--out", type=Path, help="default: models/ngram/<language>_char4.npz")
     args = ap.parse_args()
+    setup(args.language)
+    args.out = args.out or ROOT / "models" / "ngram" / LANG.ngram_file
 
     tasks = task_sentences()
     counter = Counter(args.order)
@@ -178,7 +212,7 @@ def main():
         if len(clean) < 20:
             return
         counter.add(clean)
-        for w in re.findall(r"[а-я]+", clean):
+        for w in _word.findall(clean):
             words[w] = words.get(w, 0) + 1
 
     t0 = time.time()
@@ -188,6 +222,21 @@ def main():
             add_doc(f.read_text(encoding="utf-8", errors="ignore"))
         sources.append({"kind": "texts", "path": folder.name, "files": len(files)})
         print(f"texts {folder}: {len(files)} files, {counter.chars / 1e6:.0f}M chars, {time.time() - t0:.0f}s",
+              flush=True)
+    if args.parquet:
+        import pyarrow.parquet as pq
+        start, docs = counter.chars, 0
+        limit = args.parquet_max_mb * 1e6 if args.parquet_max_mb else float("inf")
+        for path in args.parquet:
+            pf = pq.ParquetFile(path)
+            for g in range(pf.num_row_groups):
+                for text in pf.read_row_group(g, columns=["TEXT"]).column("TEXT").to_pylist():
+                    if counter.chars - start > limit:
+                        break
+                    add_doc(text or "")
+                    docs += 1
+        sources.append({"kind": "parquet", "path": [p.name for p in args.parquet], "documents": docs})
+        print(f"parquet: {docs} documents, {(counter.chars - start) / 1e6:.0f}M chars, {time.time() - t0:.0f}s",
               flush=True)
     if args.lenta:
         opener = bz2.open if args.lenta.suffix == ".bz2" else open
@@ -216,7 +265,7 @@ def main():
             parts = line.split()
             if len(parts) == 2 and parts[1].isdigit():
                 w = normalize(parts[0]).strip(" .,")
-                if re.fullmatch(r"[а-я]+", w or ""):
+                if _word.fullmatch(w or ""):
                     rows.append((w, int(parts[1])))
         total = sum(c * (len(w) + 1) for w, c in rows)
         target = counter.chars * args.wordfreq_share / (1 - args.wordfreq_share)
@@ -234,7 +283,7 @@ def main():
     top = sorted(words.items(), key=lambda kv: -kv[1])[:args.vocab]
     task_text = " ".join(sorted(tasks))
     bpc = bits_per_char(table, args.order, task_text)
-    meta = {"format": "eeg-speller/char-ngram@1", "alphabet": ALPHABET, "order": args.order,
+    meta = {"format": "eeg-speller/char-ngram@1", "language": LANG.code, "alphabet": ALPHABET, "order": args.order,
             "smoothing": "interpolated Kneser-Ney (one discount per order, add-one unigram)",
             "train_chars": int(counter.chars), "sources": sources,
             "bits_per_char_tasks": round(float(bpc), 3), "vocab_size": len(top),

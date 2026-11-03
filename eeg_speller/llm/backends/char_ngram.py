@@ -15,11 +15,16 @@ import re
 import numpy as np
 
 from eeg_speller.core.distributions import SymbolDistribution, log_probs
-from eeg_speller.core.keyboard import LM_ALPHABET, keyboard_text, project
+from eeg_speller.core.keyboard import keyboard_text, project
+from eeg_speller.core.language import current, lm_alphabet
 
 PROJECT = Path(__file__).resolve().parents[3]
 MODELS = PROJECT / "models" / "ngram"
-DEFAULT_MODEL = MODELS / "ru_char4.npz"
+DEFAULT_MODEL = MODELS / "ru_char4.npz"     # Russian; the session default is default_model()
+
+
+def default_model() -> Path:
+    return MODELS / current().ngram_file
 
 
 def available_models() -> list[dict]:
@@ -32,7 +37,7 @@ def available_models() -> list[dict]:
         except Exception:
             continue
         out.append({"file": path.name, "order": meta.get("order"),
-                    "train_chars": meta.get("train_chars"), "bpc": meta.get("bits_per_char_tasks"),
+                    "language": meta.get("language", "ru"), "train_chars": meta.get("train_chars"), "bpc": meta.get("bits_per_char_tasks"),
                     "sources": [s.get("kind") for s in meta.get("sources", [])]})
     return out
 
@@ -43,7 +48,7 @@ class CharNGram:
 
     def __init__(self, cfg: dict):
         # IMPROV[Q-39]
-        name = cfg.get("model_file") or DEFAULT_MODEL.name
+        name = cfg.get("model_file") or default_model().name
         path = Path(name)
         if not path.is_absolute():
             path = MODELS / path
@@ -58,14 +63,15 @@ class CharNGram:
             self.vocab = [str(w) for w in data["vocab"]]
             counts = data["vocab_count"].astype(np.float64)
             self.meta = json.loads(str(data["meta"]))
-        if self.meta.get("alphabet") != LM_ALPHABET:
-            raise ValueError("n-gram model alphabet does not match the speller LM alphabet")
+        if self.meta.get("alphabet") != lm_alphabet():
+            raise ValueError(f"n-gram model {path.name} is for another language than the session ({current().name}); "
+                             f"choose {current().ngram_file}")
         self.order = int(self.meta["order"])
         self.cfg = cfg
         self.model_id = cfg.get("model_id") or path.stem
         self.file = path.name
-        self.V = len(LM_ALPHABET)
-        self.index = {c: i for i, c in enumerate(LM_ALPHABET)}
+        self.V = len(lm_alphabet())
+        self.index = {c: i for i, c in enumerate(lm_alphabet())}
         self.log_unigram = np.log(counts / counts.sum())
         self.by_first: dict[str, list[int]] = {}
         for i, w in enumerate(self.vocab):
@@ -98,7 +104,7 @@ class CharNGram:
     def top_words(self, context: str, n: int):
         # ASSUMPTION[MA-11]
         clean = self._clean(context)
-        prefix = re.search(r"[а-я]*$", clean).group()
+        prefix = re.search(r"[а-яa-z]*$", clean).group()
         history = clean[:len(clean) - len(prefix)]
         pool = self.by_first.get(prefix[:1], []) if prefix else range(len(self.vocab))
         cands = [i for i in pool if self.vocab[i].startswith(prefix) and len(self.vocab[i]) > len(prefix)]

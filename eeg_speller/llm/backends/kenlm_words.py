@@ -33,12 +33,13 @@ import urllib.request
 import numpy as np
 
 from eeg_speller.core.distributions import SymbolDistribution, log_probs
-from eeg_speller.core.keyboard import LM_ALPHABET, keyboard_text, project
+from eeg_speller.core.keyboard import keyboard_text, project
+from eeg_speller.core.language import current, lm_alphabet
 
 PROJECT = Path(__file__).resolve().parents[3]
 CACHE = PROJECT / "models" / "kenlm"
-WORD = re.compile(r"[а-яё]+")
-DEFAULT_REPO = "jonatasgrosman/wav2vec2-large-xlsr-53-russian"
+WORD = re.compile(r"[а-яёa-z]+")
+DEFAULT_REPO = "jonatasgrosman/wav2vec2-large-xlsr-53-russian"   # Russian; per session: current().kenlm_repo
 MODEL_SUFFIXES = (".binary", ".bin", ".klm", ".arpa", ".arpa.gz")
 
 # Progress of a running download, shown in the operator window.
@@ -154,7 +155,7 @@ class KenLMWords:
                              "(сборка на Windows и Python 3.13 — models/kenlm/README.md)") from exc
         self.kenlm = kenlm
         self.cfg = cfg
-        model_id = str(cfg.get("model_id") or DEFAULT_REPO).strip()
+        model_id = str(cfg.get("model_id") or current().kenlm_repo).strip()
         self.model_file, unigrams, self.provenance = resolve_model(model_id, bool(cfg.get("allow_download")))
         self.model = kenlm.Model(str(self.model_file))
         self.order = self.model.order
@@ -165,9 +166,11 @@ class KenLMWords:
         self.char_mix = float(cfg.get("char_mix", 0.1))
         self.comma_share = float(cfg.get("comma_share", 0.05))
         self.char_model = char_model
-        # Vocabulary: Russian words only, the most probable ones (unigram score) first.
+        # Vocabulary: words of the session language only, the most probable ones (unigram score) first.
         limit = int(cfg.get("vocab_limit", 60000))
-        raw = [w for w in read_vocabulary(self.model_file, unigrams) if WORD.fullmatch(w.lower())]
+        letters = set(current().letters)
+        raw = [w for w in read_vocabulary(self.model_file, unigrams)
+               if WORD.fullmatch(w.lower()) and set(w.lower().replace("ё", "е")) <= letters]
         scored = []
         for w in raw:
             scored.append((self.model.score(w, bos=False, eos=False), w))
@@ -200,8 +203,8 @@ class KenLMWords:
         """
         text = keyboard_text(context)
         sentence = text.split(".")[-1]
-        prefix = re.search(r"[а-я]*$", sentence).group()
-        finished = re.findall(r"[а-я]+", sentence[:len(sentence) - len(prefix)])
+        prefix = re.search(r"[а-яa-z]*$", sentence).group()
+        finished = re.findall(r"[а-яa-z]+", sentence[:len(sentence) - len(prefix)])
         return finished, prefix, True
 
     def _candidates(self, prefix: str):
@@ -221,12 +224,13 @@ class KenLMWords:
     def lm_distribution(self, context: str) -> np.ndarray:
         finished, prefix, sentence_start = self._parse(context)
         cands, logp, state = self._word_scores(finished, prefix, sentence_start)
-        word = np.zeros(len(LM_ALPHABET))
+        alphabet = lm_alphabet()
+        word = np.zeros(len(alphabet))
         if len(cands):
             p = np.exp(logp - logp.max())
             boundary = 0.0
             n = len(prefix)
-            idx = {c: i for i, c in enumerate(LM_ALPHABET)}
+            idx = {c: i for i, c in enumerate(alphabet)}
             for w, pw in zip(cands, p):
                 if len(w) > n:
                     word[idx[w[n]]] += pw
@@ -244,7 +248,7 @@ class KenLMWords:
             if word.sum() > 0:
                 word /= word.sum()
         char = self.char_model.lm_distribution(context) if self.char_model is not None else \
-            np.full(len(LM_ALPHABET), 1 / len(LM_ALPHABET))
+            np.full(len(alphabet), 1 / len(alphabet))
         if word.sum() == 0:
             return char
         mixed = (1 - self.char_mix) * word + self.char_mix * char
@@ -293,6 +297,6 @@ def kenlm_available() -> bool:
 
 
 def default_char_model():
-    from eeg_speller.llm.backends.char_ngram import CharNGram, DEFAULT_MODEL
-    return CharNGram({"model_file": DEFAULT_MODEL.name}) if DEFAULT_MODEL.is_file() else None
+    from eeg_speller.llm.backends.char_ngram import CharNGram, default_model
+    return CharNGram({"model_file": default_model().name}) if default_model().is_file() else None
 

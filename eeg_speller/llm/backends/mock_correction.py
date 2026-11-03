@@ -7,7 +7,8 @@ from eeg_speller.text.normalize import words
 
 
 def edit_cost(a: str, b: str, same_row_col_cost: float = 0.5) -> float:
-    layout = "абвгдежзийклмнопрстуфхцчшщъыьэюя .," + "⌫"
+    from eeg_speller.core.language import lm_alphabet
+    layout = lm_alphabet() + "⌫"
     pos = {ch: divmod(i, 6) for i, ch in enumerate(layout)}
     prev = list(range(len(b) + 1))
     for i, ca in enumerate(a, 1):

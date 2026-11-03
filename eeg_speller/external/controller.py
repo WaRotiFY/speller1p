@@ -29,6 +29,8 @@ import numpy as np
 from eeg_speller.core.clock import Clock
 from eeg_speller.core.distributions import Repertoire, SymbolDistribution, log_probs, normalize_logits
 from eeg_speller.core.keyboard import BACKSPACE, typed_char, validate_keyboard
+from eeg_speller.core.language import current as current_language, detect as detect_language
+from eeg_speller.core.language import path as language_path, set_language
 from eeg_speller.decoding.detector import SymbolDetector
 from eeg_speller.epoch.plugins import PluginFusion
 from eeg_speller.external.transport import Incoming, LSLTransport, PROTOCOL
@@ -47,7 +49,7 @@ from eeg_speller.text.secondary import SecondaryText
 PROJECT = Path(__file__).resolve().parents[2]
 CORPUS = PROJECT / "data" / "corpus_ru_fallback.txt"
 LOG_LIMIT = 500
-WORD = re.compile(r"[а-я]+")
+WORD = re.compile(r"[а-яa-z]+")
 
 DEFAULTS = {
     "stop_confidence": 0.99,          # None disables the stop signal
@@ -105,6 +107,8 @@ class ExternalSession:
                  profile: str = "", passport: dict | None = None, replay_of: str | None = None):
         self.cfg = cfg
         self.profile = profile
+        # Language first: LM alphabet, default models, corpus and prompt depend on it.
+        self.language = set_language((cfg.model_extra or {}).get("language")).code
         self.opts = {**DEFAULTS, **(getattr(cfg, "external", None) or {})}
         self.rep = Repertoire(tuple(cfg.repertoire["symbols"]), tuple(cfg.repertoire["layout"]))
         self.typed = {s: typed_char(s) for s in self.rep.symbols}
@@ -337,6 +341,11 @@ class ExternalSession:
             self.rec.emit("Presentation Method", "keyboard_set",
                           {"module": module, "symbols": list(symbols), "layout": list(layout),
                            "task_characters_missing": missing}, None)
+            kb_lang = detect_language(symbols)
+            if kb_lang != self.language:
+                self.rec.emit("Presentation Method", "warning",
+                              {"module": module, "message": f"the module keyboard looks {kb_lang}, but the session "
+                               f"language is {self.language}: choose language {kb_lang} for the language models"}, None)
             if missing:
                 self.rec.emit("Presentation Method", "warning",
                               {"module": module, "message": f"the task has characters missing on the keyboard: {missing}"},
@@ -964,7 +973,7 @@ class ExternalSession:
 
 def default_model_factory(kind: str, cfg: dict):
     if kind == "fast":
-        return create_fast(cfg, CORPUS)
+        return create_fast(cfg, language_path("corpus_file"))
     cfg = dict(cfg)
     allow_remote = bool(cfg.pop("_allow_remote", False))
-    return create_slow(cfg, allow_remote, CORPUS)
+    return create_slow(cfg, allow_remote, language_path("corpus_file"))

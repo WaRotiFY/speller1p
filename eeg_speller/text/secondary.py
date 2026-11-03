@@ -19,7 +19,7 @@ class SecondaryText:
 
     def replace_window(self, words_out: list[str], start_word: int) -> None:
         import re
-        spans = list(re.finditer(r"[а-я]+", self.value))
+        spans = list(re.finditer(r"[а-яa-z]+", self.value))
         if not words_out or start_word >= len(spans):
             return
         selected = spans[start_word:start_word + len(words_out)]

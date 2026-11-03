@@ -187,7 +187,7 @@ def test_session_with_api_correction_records_raw_likelihood_and_timeline(fake_ap
     cfg, passport = build_session_config({
         "inference": {"plugin": "log_pool", "params": {"alpha": 0.0}},
         "slow": {"backend": "chat_api", "provider": "custom", "base_url": fake_api, "model_id": "m",
-                 "every_n_words": 1, "window_words": 2}})
+                 "trigger": "word_end", "every_n_words": 1, "window_words": 2}})
     cfg = cfg.model_copy(update={"slow_llm": {**cfg.slow_llm, "min_context_words": 0}})
     tr = MemoryTransport()
     acknowledge_keyboard(tr)

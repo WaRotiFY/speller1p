@@ -39,7 +39,8 @@ let sFast, sCtx, sSlow;
 async function boot() {
   init = await api("/api/init");
   saved = load();
-  for (const t of init.tasks) $("task").add(new Option(`${t.id} — ${t.text}`, t.id));
+  for (const l of init.languages) $("language").add(new Option(l.name, l.code));
+  $("language").onchange = () => languageChanged(true);
   $("task").onchange = () => $("custom-row").classList.toggle("hidden", $("task").value !== "custom");
 
   // theme
@@ -68,6 +69,12 @@ async function boot() {
 
   // slow LLM
   sSlow = seg("slow-backend", (v) => $("slow-api").classList.toggle("hidden", v !== "chat_api"));
+  $("slow-trigger").onchange = () => {
+    const words = $("slow-trigger").value === "word_end";
+    $("every-chars-row").classList.toggle("hidden", words);
+    $("every-n-row").classList.toggle("hidden", !words);
+    $("window-w-row").classList.toggle("hidden", !words);
+  };
   for (const p of init.providers) $("provider").add(new Option(p.label, p.id));
   $("provider").onchange = () => providerChanged(true);
   $("key-save").onclick = saveKey;
@@ -95,6 +102,8 @@ async function boot() {
 function restore() {
   const s = saved, d = init.defaults;
   if (s.participant) $("participant").value = s.participant;
+  $("language").value = init.languages.some((l) => l.code === s.language) ? s.language : "ru";
+  languageChanged(false);
   if (s.task && [...$("task").options].some((o) => o.value === s.task)) $("task").value = s.task;
   if (s.custom) $("custom").value = s.custom;
   $("task").onchange();
@@ -106,7 +115,7 @@ function restore() {
   sFast.set((s.llm === "off" ? "uniform" : s.fastBackend) || (kenlmReady ? "kenlm" : "ngram"));
   if (s.ngramFile && init.fast_models.some((m) => m.file === s.ngramFile)) $("ngram-file").value = s.ngramFile;
   $("hf-model").value = s.hfModel || "";
-  $("kenlm-id").value = s.kenlmId || init.kenlm.default;
+  $("kenlm-id").value = s.kenlmId || lang().kenlm;
   $("kenlm-download").checked = !!s.kenlmDownload;
   $("hf-download").checked = !!s.hfDownload;
   $("hf-device").value = s.hfDevice || "cpu";
@@ -122,6 +131,9 @@ function restore() {
   $("provider").value = s.provider || "ollama";
   $("base-url").value = s.baseUrl || "";
   providerChanged(false);
+  $("slow-trigger").value = s.slowTrigger || d.slow_trigger || "every_n_chars";
+  $("slow-trigger").onchange();
+  $("every-chars").value = s.everyChars ?? d.every_n_chars ?? 20;
   $("every-n").value = s.everyN ?? d.every_n_words;
   $("window-w").value = s.windowW ?? d.window_words;
   $("alts").checked = s.alts ?? true;
@@ -131,7 +143,8 @@ function restore() {
 
 function collectSaved() {
   saved = {
-    ...saved, participant: $("participant").value.trim(), task: $("task").value, custom: $("custom").value,
+    ...saved, participant: $("participant").value.trim(), language: $("language").value,
+    task: $("task").value, custom: $("custom").value,
     llm: "on", program: $("program").value,
     fastBackend: sFast.get(), ngramFile: $("ngram-file").value, hfModel: $("hf-model").value.trim(),
     hfDownload: $("hf-download").checked, hfDevice: $("hf-device").value, context: sCtx.get(),
@@ -140,6 +153,7 @@ function collectSaved() {
     pauseMs: +$("pause-ms").value, stopOff: $("stop-off").checked, slowBackend: sSlow.get(),
     provider: $("provider").value, baseUrl: $("base-url").value.trim(), slowModel: $("slow-model").value.trim(),
     everyN: +$("every-n").value, windowW: +$("window-w").value,
+    slowTrigger: $("slow-trigger").value, everyChars: +$("every-chars").value,
     alts: $("alts").checked, altsK: +$("alts-k").value,
   };
   saved.pluginParams = { ...(saved.pluginParams || {}), [$("inf-plugin").value]: pluginParamValues() };
@@ -210,18 +224,34 @@ async function refreshModels() {
   } catch (e) { txt($("models-info"), e.message); }
 }
 
+/* language: task list and the default fast models follow it */
+function lang() { return init.languages.find((l) => l.code === $("language").value) || init.languages[0]; }
+function languageChanged(user) {
+  const l = lang(), keep = $("task").value;
+  for (const o of [...$("task").options]) if (o.value !== "free" && o.value !== "custom") o.remove();
+  for (const t of l.tasks) $("task").add(new Option(`${t.id} — ${t.text}`, t.id));
+  $("task").value = [...$("task").options].some((o) => o.value === keep) ? keep : "free";
+  $("task").onchange();
+  if (!user) return;
+  // Swap the language defaults, but keep a model the operator typed in by hand.
+  const defaults = init.languages.map((x) => x.kenlm);
+  if (!$("kenlm-id").value || defaults.includes($("kenlm-id").value)) $("kenlm-id").value = l.kenlm;
+  if ([...$("ngram-file").options].some((o) => o.value === l.ngram)) $("ngram-file").value = l.ngram;
+  if (!$("hf-model").value || init.languages.some((x) => x.hf === $("hf-model").value)) $("hf-model").value = l.hf;
+}
+
 /* prompt editor */
 async function openPrompt() {
-  const r = await api("/api/init");
-  init.prompt = r.prompt;
-  $("prompt-text").value = init.prompt.current;
+  const r = await api("/api/prompt", { action: "get", language: $("language").value });
+  init.prompt = r;
+  $("prompt-text").value = r.current;
   txt($("prompt-error"), "");
   $("prompt-modal").classList.remove("hidden");
   previewPrompt();
 }
 async function previewPrompt() {
   try {
-    const r = await api("/api/prompt", { action: "preview", text: $("prompt-text").value });
+    const r = await api("/api/prompt", { action: "preview", text: $("prompt-text").value, language: $("language").value });
     const box = $("prompt-preview"); box.textContent = "";
     const user = r.messages.find((m) => m.role === "user"), system = r.messages.find((m) => m.role === "system");
     box.appendChild(el("div", "role", "сообщение (user)"));
@@ -233,13 +263,13 @@ async function previewPrompt() {
 }
 async function savePrompt() {
   try {
-    const r = await api("/api/prompt", { action: "save", text: $("prompt-text").value });
+    const r = await api("/api/prompt", { action: "save", text: $("prompt-text").value, language: $("language").value });
     txt($("prompt-edited"), r.edited ? "(изменён)" : "(стандартный)");
     $("prompt-modal").classList.add("hidden");
   } catch (e) { txt($("prompt-error"), e.message); }
 }
 async function resetPrompt() {
-  const r = await api("/api/prompt", { action: "reset" });
+  const r = await api("/api/prompt", { action: "reset", language: $("language").value });
   $("prompt-text").value = r.current;
   txt($("prompt-edited"), "(стандартный)");
   previewPrompt();
@@ -254,6 +284,7 @@ async function start() {
     const v = $("task").value;
     body = {
       participant_id: $("participant").value.trim(),
+      language: $("language").value,
       task: v === "free" ? { kind: "free" } : v === "custom" ? { kind: "custom", text: $("custom").value } : { kind: "task", id: v },
       llm_on: true,
       physiology: { program: $("program").value },
@@ -265,6 +296,7 @@ async function start() {
       pause_ms: +$("pause-ms").value,
       slow: { backend: sSlow.get(), provider: $("provider").value, base_url: $("base-url").value.trim(),
         model_id: $("slow-model").value.trim(),
+        trigger: $("slow-trigger").value, every_n_chars: +$("every-chars").value,
         every_n_words: +$("every-n").value, window_words: +$("window-w").value,
         include_alternatives: $("alts").checked, alternatives_k: +$("alts-k").value },
     };

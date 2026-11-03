@@ -157,7 +157,7 @@ class EpochRunner:
         if self.cfg.rl["enabled"]:
             # STUB[Q-18]
             import re
-            matches = list(re.finditer(r"[а-я]+", self.primary.value))
+            matches = list(re.finditer(r"[а-яa-z]+", self.primary.value))
             frozen_char = matches[frozen].start() if frozen < len(matches) else len(self.primary.value)
             batch = self.rl.on_secondary_update(self.primary.value, self.secondary.value,
                                                 frozen_char, self.history, req.correction_id)

@@ -21,19 +21,49 @@ class CorrectionScheduler:
         self.cfg = cfg
         self.next_id = 0
         self.last_count = 0
+        self.last_len = 0
+        self.next_word = 0
+
+    def _by_chars(self, primary: str):
+        """Every N typed characters, spaces or not: the words typed since the last request.
+
+        The word still being typed waits for the next request, unless it is the only one:
+        text typed without spaces (as in most open P300 recordings) is one long "word" and
+        is sent as it grows, so the slow model still sees it. Deleting characters moves
+        the marks back.
+        """
+        n = max(1, int(self.cfg.get("every_n_chars", 20)))
+        self.last_len = min(self.last_len, len(primary))
+        if len(primary) - self.last_len < n:
+            return None
+        self.last_len = len(primary)
+        matches = list(re.finditer(r"[а-яa-z]+", primary))
+        if not matches:
+            return None
+        end = len(matches)
+        if matches[-1].end() == len(primary) and end > 1:
+            end -= 1                          # the word being typed waits for the next request
+        start = min(getattr(self, "next_word", 0), end - 1)
+        self.next_word = end
+        window = [m.group() for m in matches[start:end]]
+        request = CorrectionRequest(self.next_id, "every_n_chars", window, start, primary[:matches[start].start()])
+        self.next_id += 1
+        return request
 
     def on_primary_update(self, primary: str):
         # ASSUMPTION[MA-19]
         trigger = self.cfg["trigger"]
         if trigger == "manual" or not primary:
             return None
+        if trigger == "every_n_chars":
+            return self._by_chars(primary)
         if trigger == "word_end" and primary[-1] not in " .,":
             return None
         if trigger == "sentence_end" and primary[-1] != ".":
             return None
         if trigger == "every_k_symbols" and len(primary) % int(self.cfg.get("every_k_symbols", 10)):
             return None
-        matches = list(re.finditer(r"[а-я]+", primary))
+        matches = list(re.finditer(r"[а-яa-z]+", primary))
         count = len(matches)
         if count == self.last_count:
             return None
@@ -56,7 +86,7 @@ def validate_correction(words_in, words_out, strict=True):
     # ASSUMPTION[MA-20]
     if strict and len(words_in) != len(words_out):
         return False, "word_count"
-    if any(not re.fullmatch(r"[а-я]+", word) for word in words_out):
+    if any(not re.fullmatch(r"[а-яa-z]+", word) for word in words_out):
         return False, "invalid_character"
     return True, None
 
@@ -74,7 +104,7 @@ def align_correction(words_in, words_out):
     """
     # ASSUMPTION[MA-38]
     words_in, words_out = list(words_in), list(words_out)
-    if any(not re.fullmatch(r"[а-я]+", w) for w in words_out):
+    if any(not re.fullmatch(r"[а-яa-z]+", w) for w in words_out):
         return words_in, False, "invalid_character"
     n, m = len(words_in), len(words_out)
     if n == m and all(len(a) == len(b) for a, b in zip(words_in, words_out)):

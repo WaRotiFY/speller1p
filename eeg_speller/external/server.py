@@ -20,6 +20,7 @@ import time
 from urllib.parse import parse_qs, urlsplit
 
 from eeg_speller.core.config import Config, _merge, load_config
+from eeg_speller.core.language import LANGUAGES, current as current_language, set_language
 from eeg_speller.epoch.plugins import list_plugins
 from eeg_speller.external.controller import ExternalSession, default_model_factory
 from eeg_speller.external.launcher import StimulusProcess, build_args, stimulus_programs
@@ -67,12 +68,15 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
 
     llm_on = bool(body.get("llm_on", True))
     patch["mode"] = {"llm": "on" if llm_on else "off"}
+    lang = set_language(body.get("language") or base.get("language"))
+    patch["language"] = lang.code
+    passport["language"] = lang.name
 
     fast = body.get("fast") or {}
     backend = fast.get("backend", "ngram")
     if backend == "ngram":
         names = {m["file"] for m in available_models()}
-        model_file = fast.get("model_file") or "ru_char4.npz"
+        model_file = fast.get("model_file") or lang.ngram_file
         if model_file not in names:
             raise ValueError("choose an n-gram model from models/ngram")
         patch["fast_llm"] = {"backend": "ngram", "model_file": model_file, "model_id": Path(model_file).stem}
@@ -83,13 +87,13 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
     elif backend == "hf_causal":
         model_id = str(fast.get("model_id") or "").strip()
         if not model_id or len(model_id) > 200 or any(c.isspace() for c in model_id):
-            raise ValueError("enter a Hugging Face model name, e.g. Qwen/Qwen2.5-0.5B")
+            raise ValueError(f"enter a Hugging Face model name, e.g. {lang.hf_model}")
         patch["fast_llm"] = {"backend": "hf_causal", "model_id": model_id,
                              "allow_download": bool(fast.get("allow_download")),
                              "device": fast.get("device") if fast.get("device") in ("cpu", "cuda", "mps") else "cpu"}
         passport["fast"] = model_id
     elif backend == "kenlm":
-        model_id = str(fast.get("kenlm_id") or kenlm_words.DEFAULT_REPO).strip()
+        model_id = str(fast.get("kenlm_id") or lang.kenlm_repo).strip()
         if not model_id or len(model_id) > 300:
             raise ValueError("enter a Hugging Face name or a path to a KenLM file")
         patch["fast_llm"] = {"backend": "kenlm", "model_id": model_id,
@@ -126,7 +130,12 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
 
     slow = body.get("slow") or {}
     sb = slow.get("backend", "dictionary")
-    s_patch = {"every_n_words": _num(slow.get("every_n_words", 1), 1, 20, "every N words", integer=True),
+    trigger = slow.get("trigger", "every_n_chars")
+    if trigger not in ("every_n_chars", "word_end"):
+        raise ValueError("slow LLM trigger must be every_n_chars or word_end")
+    s_patch = {"trigger": trigger,
+               "every_n_chars": _num(slow.get("every_n_chars", 20), 3, 200, "every N characters", integer=True),
+               "every_n_words": _num(slow.get("every_n_words", 1), 1, 20, "every N words", integer=True),
                "window_words": _num(slow.get("window_words", 3), 1, 20, "window", integer=True),
                "include_alternatives": bool(slow.get("include_alternatives", True)),
                "alternatives_k": _num(slow.get("alternatives_k", 4), 1, 10, "alternatives K", integer=True)}
@@ -250,23 +259,31 @@ class Manager:
 
 def init_payload() -> dict:
     base = load_config(BASE_PROFILE)
-    return {"tasks": read_task_list(), "programs": stimulus_programs(),
+    return {"tasks": read_task_list(language="ru"),
+            "languages": [{"code": c, "name": l.name, "tasks": read_task_list(language=c), "ngram": l.ngram_file,
+                           "kenlm": l.kenlm_repo, "hf": l.hf_model} for c, l in LANGUAGES.items()],
+            "programs": stimulus_programs(),
             "fast_models": available_models(), "inference": list_plugins(),
             "kenlm": {"available": kenlm_words.kenlm_available(), "default": kenlm_words.DEFAULT_REPO,
                       "downloaded": kenlm_words.downloaded_models()},
             "providers": chat_api.provider_list(),
             "prompt": {"current": chat_api.read_prompt(), "default": chat_api.read_prompt("default"),
-                       "edited": chat_api.USER_PROMPT.is_file()},
+                       "edited": chat_api.user_prompt_file().is_file()},
             "defaults": {"stop_confidence": base.external["stop_confidence"],
                          "min_updates": base.external["min_updates_before_stop"],
                          "pause_ms": base.stimulus["pause_ms"],
                          "every_n_words": base.slow_llm["every_n_words"],
+                         "every_n_chars": base.slow_llm.get("every_n_chars", 20),
+                         "slow_trigger": base.slow_llm.get("trigger", "every_n_chars"),
                          "window_words": base.slow_llm["window_words"],
                          "alternatives_k": base.slow_llm["alternatives_k"]}}
 
 
 def prompt_preview(text: str) -> list[dict]:
     chat_api.check_template(text)
+    if current_language().code == "en":
+        letters = [[[["h", .95], ["n", .02]], [["a", .93], ["e", .04]], [["l", .51], ["t", .44], ["d", .03]]]]
+        return chat_api.build_messages(text, "put on your", ["hal"], letters)
     letters = [[[["д", .96], ["л", .02]], [["а", .91], ["я", .04]], [["й", .97], ["и", .02]]],
                [[["п", .94], ["р", .03]], [["д", .46], ["л", .41], ["ж", .06], ["б", .03]], [["е", .89], ["ё", .05]],
                 [["д", .97], ["т", .02]]]]
@@ -338,6 +355,8 @@ def make_handler(manager: Manager):
                     chat_api.save_key(body.get("provider", ""), str(body.get("key", ""))[:400])
                     return self._send(200, {"providers": chat_api.provider_list()})
                 if self.path == "/api/prompt":
+                    if body.get("language"):           # prompts are kept per language
+                        set_language(body["language"])
                     action = body.get("action")
                     if action == "save":
                         chat_api.save_prompt(str(body.get("text", "")))
@@ -345,10 +364,11 @@ def make_handler(manager: Manager):
                         chat_api.reset_prompt()
                     elif action == "preview":
                         return self._send(200, {"messages": prompt_preview(str(body.get("text", "")))})
-                    else:
-                        raise ValueError("action must be save, reset or preview")
+                    elif action != "get":
+                        raise ValueError("action must be get, save, reset or preview")
                     return self._send(200, {"current": chat_api.read_prompt(),
-                                            "edited": chat_api.USER_PROMPT.is_file()})
+                                            "default": chat_api.read_prompt("default"),
+                                            "edited": chat_api.user_prompt_file().is_file()})
                 if s is None:
                     raise ValueError("no session")
                 if self.path == "/api/pause":
