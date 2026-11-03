@@ -223,3 +223,6 @@ runs/
 prompts/user/
 logs/
 models/kenlm/*/
+
+# Open EEG data downloaded by stimulus_kit/tools/open_data/get_*.py
+data/bnci2014_008/

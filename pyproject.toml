@@ -14,6 +14,7 @@ dependencies = ["numpy>=1.24", "pydantic>=2,<3", "PyYAML>=6", "scipy>=1.11",
 dev = ["pytest>=8", "pyarrow"]              # tests and Parquet tables
 hf = ["transformers", "torch"]              # neural fast LM from Hugging Face (several GB)
 kenlm = ["kenlm"]                           # word KenLM fast LM; needs a C++ compiler, see models/kenlm/README.md
+replay = ["pyriemann>=0.6", "scikit-learn>=1.3", "joblib"]   # real-EEG replay module and its ready-made decoder
 # Old names kept so earlier install commands still work.
 test = ["pytest>=8"]
 external = []

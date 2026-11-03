@@ -84,8 +84,51 @@ def preprocess(raw, fs, cfg):
 
 
 def llr(model, X):
-    """Per-flash log-likelihood ratio target vs non-target (training class prior removed)."""
-    return model["pipeline"].decision_function(X) - model["prior_logit"]
+    """Per-flash log-likelihood ratio target vs non-target (training class prior removed).
+
+    ``llr_scale`` (``calibrate --fit-scale``; 1 by default) shrinks the classifier's over-confident scores so
+    that the summed evidence gives honest symbol probabilities: the speller stops a symbol
+    early when its posterior crosses a threshold, so over-confidence means wrong early stops.
+    """
+    return (model["pipeline"].decision_function(X) - model["prior_logit"]) * model.get("llr_scale", 1.0)
+
+
+def symbol_logp(scores, groups, symbols, target, scale, step):
+    """log P(target) after every ``step`` flashes, symbols scored by summed scaled LLR."""
+    idx = {s: i for i, s in enumerate(symbols)}
+    acc = np.zeros(len(symbols))
+    out = []
+    for n, (v, g) in enumerate(zip(scores, groups), 1):
+        for s in g:
+            acc[idx[s]] += v * scale
+        if n % step == 0:
+            z = acc - acc.max()
+            out.append(z[idx[target]] - np.log(np.exp(z).sum()))
+    return out
+
+
+def fit_llr_scale(pipeline_name, X, y, epoch_of, groups, cues, symbols, step, folds=5):
+    """Scale for the per-flash LLR, chosen by cross-validation over calibration symbols.
+
+    Out-of-fold scores (folds = whole symbols) are summed per symbol as online; the scale
+    maximises the mean log-probability of the true symbol after every repetition.
+    """
+    from sklearn.model_selection import GroupKFold
+    oof = np.zeros(len(y))
+    for tr, te in GroupKFold(n_splits=min(folds, len(set(epoch_of)))).split(X, y, epoch_of):
+        pipe = make_pipeline(pipeline_name).fit(X[tr], y[tr])
+        p = y[tr].mean()
+        oof[te] = pipe.decision_function(X[te]) - np.log(p / (1 - p))
+    grid = np.exp(np.linspace(np.log(0.02), np.log(2.0), 60))
+    best, best_ll = 1.0, -np.inf
+    for sc in grid:
+        ll = []
+        for e in sorted(set(epoch_of)):
+            m = epoch_of == e
+            ll += symbol_logp(oof[m], [groups[i] for i in np.nonzero(m)[0]], symbols, cues[e], sc, step)
+        if np.mean(ll) > best_ll:
+            best, best_ll = float(sc), float(np.mean(ll))
+    return best, best_ll
 
 
 # ───────────────────────────── offline: EDF + marker map ─────────────────────────────
@@ -121,10 +164,10 @@ def cut(data, fs, onset_s, cfg):
 
 def calibrate(a):
     cfg = dict(PIPELINES[a.pipeline])
-    fs, names, epochs, data, _ = read_flashes(a.edf, a.marker_map, a.channels)
+    fs, names, epochs, data, mmap = read_flashes(a.edf, a.marker_map, a.channels)
     train = epochs[:a.train_epochs]
-    X, y = [], []
-    for ep in train:
+    X, y, epoch_of, groups = [], [], [], []
+    for k, ep in enumerate(train):
         if ep["cue"] is None:
             raise SystemExit("calibration needs cue (target) markers in the recording")
         for onset, syms in ep["flashes"]:
@@ -132,16 +175,46 @@ def calibrate(a):
             if x is not None:
                 X.append(x)
                 y.append(int(ep["cue"] in syms))
-    X, y = np.array(X), np.array(y)
+                epoch_of.append(k)
+                groups.append(syms)
+    X, y, epoch_of = np.array(X), np.array(y), np.array(epoch_of)
     pipe = make_pipeline(a.pipeline).fit(X, y)
     p = y.mean()
+    scale, ll = (1.0, None) if not a.fit_scale else fit_llr_scale(
+        a.pipeline, X, y, epoch_of, groups, [ep["cue"] for ep in train], mmap.symbols, sum(mmap.layout))
     model = {"pipeline": pipe, "name": a.pipeline, "cfg": cfg, "channels": names, "fs": fs,
-             "prior_logit": float(np.log(p / (1 - p))), "trained_on": str(a.edf),
+             "prior_logit": float(np.log(p / (1 - p))), "llr_scale": scale, "trained_on": str(a.edf),
              "train_epochs": len(train), "n_flashes": int(len(y))}
     import joblib
     joblib.dump(model, a.out)
     print(f"{a.pipeline}: trained on {len(train)} symbols, {len(y)} flashes ({y.sum()} target), "
-          f"channels {names} → {a.out}")
+          f"LLR scale {scale:.3f}, channels {names} → {a.out}")
+
+
+def early_stop_report(model, test, data, fs, cfg, mmap, threshold, min_flashes=12):
+    """What the speller's stop rule would do with these likelihoods and a flat prior."""
+    right, used = 0, []
+    for ep in test:
+        X, groups = [], []
+        for onset, syms in ep["flashes"]:
+            x = cut(data, fs, onset, cfg)
+            if x is not None:
+                X.append(x)
+                groups.append(syms)
+        s = llr(model, np.array(X))
+        logit = {sym: 0.0 for sym in mmap.symbols}
+        for n, (v, g) in enumerate(zip(s, groups), 1):
+            for sym in g:
+                logit[sym] += v
+            top = max(logit.values())
+            z = {k: np.exp(v2 - top) for k, v2 in logit.items()}
+            best = max(z, key=z.get)
+            if (n >= min_flashes and z[best] / sum(z.values()) >= threshold) or n == len(groups):
+                right += best == ep["cue"]
+                used.append(n)
+                break
+    return {"threshold": threshold, "accuracy": round(right / len(test), 3),
+            "mean_flashes": round(float(np.mean(used)), 1), "of_flashes": len(test[0]["flashes"])}
 
 
 def evaluate(a):
@@ -176,8 +249,10 @@ def evaluate(a):
                 typed += best
         wanted += ep["cue"]
     all_s, all_y = np.array(all_s), np.array(all_y)
+    stop = early_stop_report(model, test, data, fs, cfg, mmap, a.stop_confidence)
     report = {
         "edf": str(a.edf), "pipeline": model["name"], "test_symbols": len(test),
+        "llr_scale": model.get("llr_scale", 1.0), "early_stop": stop,
         "flash_auc": round(float(roc_auc_score(all_y, all_s)), 3),
         "flash_balanced_accuracy": round(float(balanced_accuracy_score(all_y, all_s > 0)), 3),
         "symbol_accuracy_by_repetitions": {r + 1: round(float(h / len(test)), 3) for r, h in enumerate(hits)},
@@ -276,12 +351,16 @@ def main(argv=None):
     c.add_argument("--pipeline", default="xdawn_riemann", choices=list(PIPELINES))
     c.add_argument("--channels", nargs="+")
     c.add_argument("--out", required=True)
+    c.add_argument("--fit-scale", action="store_true",
+                   help="shrink per-flash scores by a cross-validated factor (more honest posteriors, "
+                        "more flashes before an early stop; on BNCI 2014-008 no accuracy gain)")
     e = sub.add_parser("evaluate")
     e.add_argument("edf")
     e.add_argument("--marker-map", required=True)
     e.add_argument("--model", required=True)
     e.add_argument("--skip-epochs", type=int, default=0, help="leave out the calibration symbols")
     e.add_argument("--json")
+    e.add_argument("--stop-confidence", type=float, default=0.99, help="speller's stop threshold to simulate")
     r = sub.add_parser("run")
     r.add_argument("--model", required=True)
     r.add_argument("--eeg-name", default="SpellerEEG")
