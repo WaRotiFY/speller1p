@@ -134,7 +134,7 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
     if trigger not in ("every_n_chars", "word_end"):
         raise ValueError("slow LLM trigger must be every_n_chars or word_end")
     s_patch = {"trigger": trigger,
-               "every_n_chars": _num(slow.get("every_n_chars", 20), 3, 200, "every N characters", integer=True),
+               "every_n_chars": _num(slow.get("every_n_chars", 20), 1, 200, "every N characters", integer=True),
                "every_n_words": _num(slow.get("every_n_words", 1), 1, 20, "every N words", integer=True),
                "window_words": _num(slow.get("window_words", 3), 1, 20, "window", integer=True),
                "include_alternatives": bool(slow.get("include_alternatives", True)),
@@ -163,6 +163,9 @@ def build_session_config(body: dict) -> tuple[Config, dict]:
     else:
         raise ValueError("unknown slow LLM backend")
     patch["slow_llm"] = s_patch
+    if s_patch.get("backend") != "off":
+        passport["slow"] += (f" · каждые {s_patch['every_n_chars']} симв." if trigger == "every_n_chars"
+                             else f" · каждые {s_patch['every_n_words']} сл.")
     patch["llm"] = {"allow_remote": allow_remote}
     if not llm_on:
         passport["fast"] = passport["slow"] = "без БЯМ"

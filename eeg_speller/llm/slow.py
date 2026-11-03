@@ -36,15 +36,21 @@ class CorrectionScheduler:
         self.last_len = min(self.last_len, len(primary))
         if len(primary) - self.last_len < n:
             return None
-        self.last_len = len(primary)
         matches = list(re.finditer(r"[а-яa-z]+", primary))
         if not matches:
             return None
+        self.next_word = min(self.next_word, len(matches))      # words deleted since the last request
         end = len(matches)
         if matches[-1].end() == len(primary) and end > 1:
             end -= 1                          # the word being typed waits for the next request
-        start = min(getattr(self, "next_word", 0), end - 1)
+        if self.next_word < end:
+            start = self.next_word            # finished words not sent yet
+        elif len(matches) == 1:
+            start = 0                         # one run of letters without spaces: send it as it grows
+        else:
+            return None                       # nothing new is finished yet: wait for a space
         self.next_word = end
+        self.last_len = len(primary)          # count the next N characters from this request
         window = [m.group() for m in matches[start:end]]
         request = CorrectionRequest(self.next_id, "every_n_chars", window, start, primary[:matches[start].start()])
         self.next_id += 1

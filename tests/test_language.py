@@ -79,6 +79,8 @@ def test_slow_llm_every_n_characters():
         (10, ["i", "would"], 0), (20, ["like", "a"], 2), (30, ["glass", "of", "water"], 4), (40, ["please"], 7)]
     # text without spaces is still corrected: the whole run of letters
     assert requests("gattomenteviolarebus", 20) == [(20, ["gattomenteviolarebus"], 0)]
+    # small N: never resend a word, wait for the next finished one
+    assert [w for _, w, _ in requests("i would like a glass ", 2)] == [["i"], ["would"], ["like"], ["a"], ["glass"]]
 
 
 def test_kenlm_without_internet_gives_a_clear_error_and_takes_files_put_by_hand(tmp_path, monkeypatch):

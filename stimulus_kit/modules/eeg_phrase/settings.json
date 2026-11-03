@@ -1,0 +1,22 @@
+{
+    "source": "bci2_iib",
+    "pipeline": "xdawn_riemann",
+    "sentence": "",
+    "speed": 1.0,
+    "max_repetitions": 15,
+    "flash_ms": 100,
+    "isi_ms": 75,
+    "seed": 0,
+    "show_cue": true,
+    "show_window": true,
+    "fullscreen": false,
+    "rest_after_ms": 600,
+    "font_name": "Arial",
+    "font_size": 60,
+    "background": [12, 14, 20],
+    "letter_color": [90, 96, 110],
+    "highlight_color": [255, 255, 255],
+    "cue_color": [255, 196, 60],
+    "window_x": 0,
+    "window_y": 0
+}
